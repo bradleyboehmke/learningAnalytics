@@ -1,0 +1,1379 @@
+---
+title: "Tutorial 1: Exploratory Data Analysis"
+output: 
+  learnr::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+
+
+## Introduction
+
+This tutorial will show you how to use descriptive statistics, transformations, and visualizations to explore your data in a systematic way, a task that statisticians call exploratory data analysis, or EDA for short. EDA is an important part of any analytics project and should be performed prior to applying more sophisticated modeling techniques to ensure you have a firm understanding of your data. Moreover, many fundamental, day-to-day questions that organizations are asking can often be found with simple EDA approaches.
+
+EDA is an iterative cycle where you:
+
+- Generate questions about your data.
+- Search for answers by visualizing, transforming, and describing your data.
+- Use what you learn to refine your questions and/or generate new questions.
+
+Your goal during EDA is to develop an understanding of your data. The easiest way to do this is to use questions as tools to guide your investigation and then use basic descriptive statistics and visualizations to answer these questions. Fortunately, there is no definitive process to perform EDA; ultimately, it is a creative process with no hard rules.  However, this tutorial will illustrate several approaches to understand common attributes of your data.
+
+For this tutorial, I have preloaded the following packages for your use:
+
+```{r setup, include=FALSE}
+library(learnr)
+library(tidyverse)
+library(moments)
+library(outliers)
+
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, collapse=TRUE)
+```
+
+```{r, eval=FALSE}
+library(tidyverse)
+library(moments)
+library(outliers)
+```
+
+Also, the data that we'll use throughout the tutorial is the `diamonds` data set provided by the `tidyverse` package.
+
+```{r}
+diamonds
+```
+
+
+
+## Numerical Data Descriptive Statistics
+
+Descriptive statistics are the first pieces of information used to understand and represent a dataset. There goal, in essence, is to describe the main features of numerical and categorical information with simple summaries. These summaries can be presented with a single numeric measure, using summary tables, or via graphical representation. Here, I illustrate the most common forms of descriptive statistics for numerical data but keep in mind there are numerous ways to describe and illustrate key features of data.
+
+### Central Tendency
+
+There are three common measures of central tendency, all of which try to answer the basic question of which value is the most “typical.” These are the mean (average of all observations), median (middle observation), and mode (appears most often). Each of these measures can be calculated for an individual variable or across all variables in a particular data frame.  We use `na.rm = TRUE` in our function to remove possible missing values.  If there are missing values (NAs) and we don't include `na.rm = TRUE` then our function will return NA.
+
+```{r}
+mean(diamonds$price, na.rm = TRUE)
+median(diamonds$price, na.rm = TRUE)
+```
+
+Unfortunately, there is not a built-in function to compute the mode of a variable[^mode]. However, we can create a function that takes the vector as an input and gives the mode value as an output.  Later on we'll see easier ways to identify most common values (and value ranges).
+
+```{r}
+get_mode <- function(v) {
+        unique_value <- unique(v)
+        unique_value[which.max(tabulate(match(v, unique_value)))]
+}
+
+get_mode(diamonds$price)
+```
+
+
+```{r prepare-data, echo=FALSE}
+diamonds <- diamonds
+```
+
+```{r mean-median, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r mean-median-hint-1}
+mean(diamonds$carat)
+```
+
+```{r mean-median-hint-2}
+median(diamonds$carat)
+```
+
+```{r mean-median-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the mean value for carat?",
+  answer("0.7"),
+  answer("0.8", correct = TRUE),
+  answer("1.0"),
+  answer("1.5")
+),
+question("What is the median value for carat?",
+  answer("0.7", correct = TRUE),
+  answer("0.8"),
+  answer("1.0"),
+  answer("1.5")
+)
+)
+```
+
+### Variability
+
+The central tendencies give you a sense of the most typical values (prices in this case) but do not provide you with information on the variability of the values. Variability can be summarized in different ways, each providing you unique understanding of how the values are spread out.
+
+#### Range
+
+The range is a fairly crude measure of variability, defining the maximum and minimum values and the difference thereof. We can compute range summaries with the following:
+
+```{r}
+# get the minimum value
+min(diamonds$price, na.rm = FALSE)
+
+# get the maximum value
+max(diamonds$price, na.rm = FALSE)
+
+# get both the min and max values
+range(diamonds$price, na.rm = FALSE)
+
+# compute the spread between min & max values
+max(diamonds$price, na.rm = FALSE) - min(diamonds$price, na.rm = FALSE)
+```
+
+```{r range, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r range-hint-1}
+min(diamonds$carat)
+max(diamonds$carat)
+range(diamonds$carat)
+```
+
+```{r range-hint-2}
+max(diamonds$carat, na.rm = FALSE) - min(diamonds$carat, na.rm = FALSE)
+```
+
+
+```{r range-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the max value for carat?",
+  answer("0.75"),
+  answer("5.01", correct = TRUE),
+  answer("1.0"),
+  answer("3.5"),
+  random_answer_order = TRUE
+),
+question("What is the min value for carat?",
+  answer("0.20", correct = TRUE),
+  answer("0.01"),
+  answer("0.75"),
+  answer("1.00"),
+  random_answer_order = TRUE
+),
+question("What is the spread between min & max carat values?",
+  answer("4.81", correct = TRUE),
+  answer("1.56"),
+  answer("2.98"),
+  answer("3.12"),
+  random_answer_order = TRUE
+)
+)
+```
+
+### Percentiles
+
+Given a certain percentage such as 25%, what is the price point such that this percentage of diamond prices is below it? This type of question leads to <u>percentiles</u> and <u>quartiles</u>. Specifically, for any percentage *p*, the *p*th percentile is the value such that a percentage *p* of all values are less than it. Similarly, the first, second, and third quartiles are the percentiles corresponding to $p=25\%$, $p=50\%$, and $p=75\%$. These three values divide the data into four groups, each with (approximately) a quarter of all observations. Note that the second quartile is equal to the median by definition. These measures are easily computed in R:
+
+
+```{r}
+# fivenum() function provides min, 25%, 50% (median), 75%, and max
+fivenum(diamonds$price)
+
+# default quantile() percentiles are 0%, 25%, 50%, 75%, and 100% 
+# provides same output as fivenum()
+quantile(diamonds$price, na.rm = TRUE)
+
+# we can customize quantile() for specific percentiles
+quantile(diamonds$price, probs = seq(from = 0, to = 1, by = .1), na.rm = TRUE)
+
+# we can quickly compute the difference between the 1st and 3rd quantile
+IQR(diamonds$price)
+```
+
+An alternative approach is to use the `summary` function which is a generic R function used to produce min, 1st quantile, median, mean, 3rd quantile, and max summary measures. However, though we do not see a difference here, note that the 1st and 3rd quantiles produced by `summary` may differ from the 1st and 3rd quantiles produced by `fivenum` and the default `quantile`. The reason for this is due to the lack of universal agreement on how the 1st and 3rd quartiles should be calculated.[^quant] Eric Cai provided a good [blog post](https://chemicalstatistician.wordpress.com/2013/08/12/exploratory-data-analysis-the-5-number-summary-two-different-methods-in-r-2/) that discusses this difference in the R functions.
+
+```{r}
+summary(diamonds$price)
+```
+
+
+```{r quantile, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r quantile-hint-1}
+summary(diamonds$carat)
+```
+
+```{r quantile-hint-2}
+quantile(diamonds$carat, probs = 0.9)
+```
+
+
+```{r quantile-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What carat value represents the upper limit of the first quartile?",
+  answer("0.70"),
+  answer("0.40", correct = TRUE),
+  answer("1.04"),
+  answer("0.20"),
+  random_answer_order = TRUE       
+),
+question("What is the carat value that 90% of the diamond observations are below?",
+  answer("5.00"),
+  answer("1.51", correct = TRUE),
+  answer("1.04"),
+  answer("0.79"),
+  random_answer_order = TRUE
+)
+)
+```
+
+### Variance
+
+Although the range provides a crude measure of variability and percentiles/quartiles provide an understanding of divisions of the data, the most common measures to summarize variability are variance and its derivatives (standard deviation and mean/median absolute deviation). We can compute each of these as follows:
+
+```{r}
+# variance
+var(diamonds$price)
+
+# standard deviation
+sd(diamonds$price)
+
+# mean absolute deviation
+mad(diamonds$price, center = mean(diamonds$price))
+
+# median absolute deviation - note that the center argument defaults to median
+# so it does not need to be specified, although I do just be clear
+mad(diamonds$price, center = median(diamonds$price))
+```
+
+
+```{r variance, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r variance-hint-1}
+summary(diamonds$carat)
+```
+
+```{r variance-hint-2}
+quantile(diamonds$carat, probs = 0.9)
+```
+
+
+```{r variance-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the variance of carat values?",
+  answer("0.76"),
+  answer("0.22", correct = TRUE),
+  answer("1.04"),
+  answer("0.20"),
+  random_answer_order = TRUE       
+),
+question("What is the standard deviation of carat values?",
+  answer("0.22"),
+  answer("0.47", correct = TRUE),
+  answer("0.76"),
+  answer("0.79"),
+  random_answer_order = TRUE
+)
+)
+```
+
+### Shape
+
+Two additional measures of a distribution that you will hear occasionally include skewness and kurtosis. Skewness is a measure of symmetry for a distribution. Negative values represent a *left-skewed* distribution where there are more extreme values to the left causing the mean to be less than the median. Positive values represent a *right-skewed* distribution where there are more extreme values to the right causing the mean to be more than the median.  
+
+Kurtosis is a measure of peakedness for a distribution. Negative values indicate a flat (platykurtic) distribution, positive values indicate a peaked (leptokurtic) distribution, and a value near 3 indicates a normal (mesokurtic) distribution.
+
+We can get both skewness and kurtosis values using the `moments` package.  Here, since our skewness is positive we can tell price is a right-skewed and since the kurtosis suggests a very peaked distribution.
+
+```{r}
+skewness(diamonds$price)
+kurtosis(diamonds$price)
+```
+
+```{r shape, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r shape-hint-1}
+skewness(diamonds$carat)
+```
+
+```{r shape-hint-2}
+kurtosis(diamonds$carat)
+```
+
+
+```{r shape-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Is the distribution of carat values:",
+  answer("left-skewed"),
+  answer("right-skewed", correct = TRUE),
+  random_answer_order = TRUE       
+),
+question("Is the distribution of carat values:",
+  answer("peaked", correct = TRUE),
+  answer("flat"),
+  random_answer_order = TRUE
+)
+)
+```
+
+
+### Outliers
+
+Outliers in data can distort predictions and affect their accuracy. Consequently, its important to understand if outliers are present and, if so, which observations are considered outliers. The `outliers` package provides a number of useful functions to systematically extract outliers. The functions of most use are `outlier()` and `scores()`. The `outlier` function gets the most extreme observation from the mean. The `scores` function computes the normalized (*z*, *t*, *chisq*, etc.) score which you can use to find observation(s) that lie beyond a given value.
+
+```{r, eval=FALSE}
+# gets most extreme right-tail observation
+outlier(diamonds$price)
+
+# gets most extreme left-tail observation
+outlier(diamonds$price, opposite = TRUE)
+
+# observations that are outliers based on z-scores greater than 2.58. In other 
+# words, these observations exceed 2.58 standard deviations from the mean.
+z_scores <- scores(diamonds$price, type = "z")
+which(abs(z_scores) > 2.58)
+
+# outliers based on values less than or greater than the "whiskers" on a 
+# boxplot (1.5 x IQR or more below 1st quartile or above 3rd quartile)
+which(scores(diamonds$price, type = "iqr", lim = 1.5))
+```
+
+
+```{r prepare-data2, echo=FALSE}
+diamonds <- diamonds
+```
+
+```{r outliers, exercise=TRUE, exercise.setup = "prepare-data2"}
+
+```
+
+```{r outliers-hint-1}
+# How many observations exceed 3 standard deviations?
+z_scores <- scores(diamonds$carat, type = "z")
+sum(abs(z_scores) > 3)
+```
+
+
+```{r outliers-question1, echo=FALSE}
+
+question("How many observations have a carat size that exceeds 3 standard deviations?",
+  answer("526"),
+  answer("439", correct = TRUE),
+  answer("201"),
+  answer("110"),
+  random_answer_order = TRUE      
+  )
+```
+
+
+How you deal with outliers is a topic worthy of its own tutorial; however, if you want to simply remove an outlier or replace it with the sample mean or median then I recommend the `rm.outlier` function provided also by the `outliers` package.
+
+
+### Visualization
+
+There are many graphical representations to illustrate these summary measures for numerical variables, but there are a couple fundamental ones that nearly everyone agrees needs to be assessed - histograms and boxplots.
+
+#### Histograms
+
+Histograms are the most common type of chart for showing the distribution of a numerical variable. Histograms display a 1D distribution by dividing into bins and counting the number of observations in each bin. Whereas the previously discussed summary measures - mean, median, standard deviation, skewness - describes only one aspect of a numerical variable, a histogram provides the complete picture by illustrating the center of the distribution, the variability, skewness, and other aspects in one convenient chart. Here, we'll use `ggplot` to visualize our data.  Furthermore, we'll illustrate that when we combine visualization with transformation we can identify a lot more about our data than any single summary statistic can provide.
+
+First, we can plot a basic histogram to see our distribution.  Here we incorporate `bindwidth = 100` which allocates our observations to pricing bins of $100 increments.
+
+```{r}
+ggplot(diamonds, aes(price)) +
+  geom_histogram(binwidth = 100)
+```
+
+We see that our distribution is right-skewed because of the many "outliers" to the right.  We also see that the majority of our data fall within several bins on the right side of our distribution.  We can see specifically what bins contain the most observations with the following code.  The `cut_width` function cuts our data into the same bins as `geom_histogram` did above.  Then the `count` function counts the number of observations in each bin.  The `arrange` function just sorts the data (in descending order in our case). If you are unfamiliar with these functions then you need to spend some time learning the [`dplyr` package](http://uc-r.github.io/dplyr)!  We see that the most common price range is $650-750. 
+
+```{r}
+diamonds %>%
+  count(cut_width(price, 100)) %>%
+  arrange(desc(n))
+```
+
+Go ahead and plot the carat values with a histogram.  Change the binwidth value to see what new information you can find.
+
+```{r carat-hist, exercise=TRUE, exercise.setup = "prepare-data2"}
+
+```
+
+```{r carat-hist-hint-1}
+ggplot(diamonds, aes(carat)) +
+  geom_histogram(binwidth = .05)
+```
+
+```{r carat-hist-hint-2}
+diamonds %>%
+  count(cut_width(carat, .05)) %>%
+  arrange(desc(n))
+```
+
+
+```{r carat-hist-question1, echo=FALSE}
+question("When assessing carat values with increments of .05, what is the most common range of carat values in our data set?",
+  answer("[0.975, 0.1.03]"),
+  answer("[0.275, 0.325]", correct = TRUE),
+  answer("[0.500, 0.550]"),
+  answer("[0.325, 0.375]"),
+  random_answer_order = TRUE      
+  )
+```
+
+We can add markers to our visualization by using `geom_vline`.  This can be used to identify the mean, median, or a particular percent.  For example, if your boss asked you to show him what the "normal" price of the diamonds your company sells, you could provide him the following and tell him that the peak in the distribution represents the price range of the most frequently sold diamonds and the red line represents the median, or the mid-price point where half of all diamonds sold fall below that price point and half fall above.
+
+```{r}
+ggplot(diamonds, aes(price)) +
+  geom_histogram(binwidth = 100) + 
+  geom_vline(xintercept = median(diamonds$price, na.rm = T), color = "red")
+```
+
+What if your boss wants to focus on marketing towards 95% of your clientele?  In other words, can you identify the price point that 95% of all diamonds sold fall under?  Can you visualize this?
+
+
+```{r price-95, exercise=TRUE, exercise.setup = "prepare-data2"}
+
+```
+
+```{r price-95-hint-1}
+# visualize where the 95% cut-off is
+ggplot(diamonds, aes(price)) +
+  geom_histogram(binwidth = 100) + 
+  geom_vline(xintercept = quantile(diamonds$price, probs = .95), color = "red")
+```
+
+```{r price-95-hint-2}
+# find the exact 95% cut-off price point
+quantile(diamonds$price, probs = .95)
+```
+
+```{r price-95-hint-3}
+# find the price range that repesents the 95% cut-off
+diamonds %>%
+  count(cut_width(price, 100)) %>%
+  mutate(cum_pct = cumsum(n)/sum(n)) %>%
+  filter(cum_pct > .95)
+```
+
+```{r price-95-question1, echo=FALSE}
+question("What price point do 95% of all diamonds sold fall under?",
+  answer("$9,255"),
+  answer("$13,107", correct = TRUE),
+  answer("$14,567"),
+  answer("$11,772"),
+  random_answer_order = TRUE      
+  )
+```
+
+
+Going back to our original histogram, we see that there is an apparent gap around the \$1,500-\$2,000 mark where hardly any diamonds are sold.
+
+```{r}
+ggplot(diamonds, aes(price)) +
+  geom_histogram(binwidth = 100)
+```
+
+We can zoom in on the histogram to find what price range this includes. It looks like very few diamonds sell right at the \$1,500 price range.
+
+```{r}
+ggplot(diamonds, aes(price)) +
+  geom_histogram(binwidth = 100) +
+  coord_cartesian(xlim = c(500, 3000))
+```
+
+To get the exact range where this gap exists we can do some data manipulation.  Here we confirm only 66 diamonds were sold in the price range of \$1,450-\$1,550.
+
+```{r}
+diamonds %>%
+  filter(price > 500 & price < 3000) %>%
+  count(cut_width(price, 100)) %>%
+  arrange(n)
+```
+
+
+### Boxplots
+
+Boxplots are an alternative way to illustrate the distribution of a variable and is a concise way to illustrate the standard quantiles, shape, and outliers of data. As the generic diagram indicates, the box itself extends, left to right, from the 1st quartile to the 3rd quartile. This means that it contains the middle half of the data. The line inside the box is positioned at the median. The lines (whiskers) coming out either side of the box extend to 1.5 interquartlie ranges (IQRs) from the quartlies. These generally include most of the data outside the box. More distant values, called outliers, are denoted separately by individual points.
+
+<center>
+<img src="https://www.leansigmacorporation.com/wp/wp-content/uploads/2015/12/Box-Plot-MTB_01.png" alt="Generic Box Plot" width="500" vspace="20">
+</center>
+
+For a quick univariate assessment we can use the `boxplot()` function in base R graphics. This single boxplot illustrates the highly skewed nature of the distribution with many outliers on the right side.
+
+```{r}
+# I use a log scale to spread out the data
+boxplot(diamonds$price, horizontal = TRUE, log = "x")
+```
+
+
+As before, we can use `ggplot` to refine the boxplot and add additional features such as a point illustrating the mean and also show the actual distribution of observations:
+
+
+```{r}
+ggplot(diamonds, aes(x = factor(0), y = price)) +
+  geom_boxplot() +
+  xlab("") +
+  scale_x_discrete(breaks = NULL) +
+  coord_flip() +
+  stat_summary(fun.y = mean, geom = "point", shape = 23, size = 4, fill = "blue")
+```
+
+However, boxplots are more useful when comparing distributions.  For instance, if you wanted to compare the distributions of prices across the different diamond cuts, boxplots provide a quick comparative assessment:
+
+```{r}
+ggplot(diamonds, aes(x = cut, y = price)) +
+  geom_boxplot() +
+  scale_y_continuous(labels = scales::dollar) +
+  coord_flip() +
+  stat_summary(fun.y = mean, geom = "point", shape = 23, size = 3, fill = "blue")
+```
+
+Here we see an interesting finding, it appears that the lower quality diamond cuts (i.e. "Fair", "Good") obtain prices that are just as high, if not higher than, the highest quality diamond cut ("Ideal").  We can use `group_by` and `summarize` to get these descriptive statistics for each cut level.  Here we can assess the difference in central tendencies of our prices and also compare the IQR range.  
+
+```{r}
+diamonds %>%
+  group_by(cut) %>%
+  summarize(median_price = median(price, na.rm = TRUE),
+            mean_price = mean(price, na.rm = TRUE),
+            IQR_price = IQR(price))
+```
+
+
+The results confirm our boxplot findings that lower quality diamond cuts often obtain higher prices than the *Ideal* diamond cut. We'll look into this more later.
+
+For now, use boxplots to compare the distribution of carat values across diamond cuts.  
+
+```{r carat-box, exercise=TRUE, exercise.setup = "prepare-data2"}
+
+```
+
+```{r carat-box-hint-1}
+# visualize distribution of carat values across cut values
+ggplot(diamonds, aes(x = cut, y = carat)) +
+  geom_boxplot() +
+  coord_flip() +
+  stat_summary(fun.y = mean, geom = "point", shape = 23, size = 3, fill = "blue")
+```
+
+```{r carat-box-hint-2}
+# compute mean and median carat values across cut values
+diamonds %>%
+  group_by(cut) %>%
+  summarize(median_carat = median(carat, na.rm = TRUE),
+            mean_carat = mean(carat, na.rm = TRUE))
+```
+
+
+```{r carat-box-question1, echo=FALSE}
+question("On average, do lower quality cut diamonds have larger carat values than higher cut diamonds?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  random_answer_order = TRUE,
+  correct = "Correct! The mean and median value for lower quality diamond cuts (i.e. Fair & Good) are larger than the mean and median carat value for the highest quality diamond cut (Ideal).",
+  incorrect = "The mean and median value for lower quality diamond cuts (i.e. Fair & Good) are larger than the mean and median carat value for the highest quality diamond cut (Ideal)."
+  )
+```
+
+
+## Categorical Data Descriptive Statistics
+
+Descriptive statistics for categorical data are often presented using summary tables or via graphical representation. Here, I illustrate the most common forms of descriptive statistics for categorical data but keep in mind there are numerous ways to describe and illustrate key features of data.
+
+### Frequencies
+
+To produce contingency tables which calculate counts for each combination of categorical variables we can use R’s `table()` function. For instance, we may want to get the total count of observations that fall into each cut category.
+
+```{r}
+# counts for diamond cut categories
+table(diamonds$cut)
+```
+
+If we want to understand the number of observations by cut *and* color we can produce a cross classification table:
+
+
+```{r}
+# cross classification counts for diamond cuts by color
+table(diamonds$color, diamonds$cut)
+```
+
+There are also functions such as `ftable` that allows us to create three-plus dimensional contingency tables.  However, I find using `dplyr` to get counts at multiple categorical levels much easier.  For instance, the following shows how to use the `count` function from `dplyr` to count the number of observations for each cut level.
+
+```{r}
+diamonds %>% count(cut)
+```
+
+We can add additional categories to `count` observations at multiple levels.  
+
+```{r}
+diamonds %>% count(cut, color)
+```
+
+Although this doesn't create our normal-looking contingency table as `table` does, it does allow us to pipe follow-on functions more easily.  For example, we can find what color and count combinations have the largest number of observations.  Here we see that the "Ideal" cut tends to have the most observations across all color options.
+
+```{r}
+diamonds %>%
+  count(cut, color) %>%
+  arrange(desc(n))
+```
+
+
+```{r prepare-data3, echo=FALSE}
+diamonds <- diamonds
+```
+
+```{r tables, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+```
+
+```{r tables-hint-1}
+# Which clarity category has the most observations?
+diamonds %>%
+  count(clarity) %>%
+  arrange(desc(n))
+```
+
+```{r tables-hint-2}
+# Which combination of clarity and cut categories has the most observations?
+diamonds %>%
+  count(clarity, cut) %>%
+  arrange(desc(n))
+```
+
+
+```{r tables-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which *clarity* category has the most observations?",
+  answer("I1"),
+  answer("SI1", correct = TRUE),
+  answer("VVS2"),
+  answer("VS2"),
+  random_answer_order = TRUE
+  ),
+question("Which combination of *clarity* and *cut* categories has the most observations?",
+  answer("SI1, Ideal"),
+  answer("VS2, Ideal", correct = TRUE),
+  answer("VVS2, Ideal"),
+  answer("VS2, Very Good"),
+  random_answer_order = TRUE
+  )
+)
+```
+
+### Proportions
+
+We can also produce contingency tables that present the proportions (percentages) of each category or combination of categories. To do this we simply feed the frequency tables produced by `table()` to the `prop.table()` function. The following reproduces the previous tables but calculates the proportions rather than counts:
+
+```{r}
+# percentages of cut categories
+table2 <- table(diamonds$cut)
+prop.table(table2)
+
+# percentages for diamond cuts by color
+table3 <- table(diamonds$color, diamonds$cut)
+prop.table(table3)
+```
+
+Alternatively, we can continue using our `dplyr` functions to obtain the same results.  Here we use `mutate` to create a new variable called "percent" that represents the proportion. 
+
+```{r}
+# percentages of cut categories
+diamonds %>%
+  count(cut) %>%
+  mutate(percent = n / sum(n))
+
+# percentages for diamond color by cut
+diamonds %>%
+  count(cut, color) %>%
+  mutate(percent = n / sum(n))
+```
+
+Note that the second set of code above computes the percentage of diamonds for a particular color by cut.  For example, the first row is telling us that of the "Fair" cut category, 10% of the observations have the color rating "D".  If we want to understand the percent that each category combination is of *all* the data we just need to `ungroup` prior to our `mutate` function.  The code that follows allows us to identify the fact that diamonds with the "Ideal" cut and color-coded "G" make up the largest percent of all observations at 9%.
+
+```{r}
+# percentages by category combination
+diamonds %>%
+  count(cut, color) %>%
+  ungroup() %>%
+  mutate(percent = n / sum(n)) %>%
+  arrange(desc(percent))
+```
+
+```{r proportions, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+```
+
+```{r proportions-hint-1}
+# What percentage of all observations is in the most popular clarity category?
+diamonds %>%
+  count(clarity) %>%
+  mutate(percent = n / sum(n)) %>%
+  arrange(desc(percent))
+```
+
+```{r proportions-hint-2}
+# What percentage of all observations is the most popular cut-clarity combination category?
+diamonds %>%
+  count(cut, clarity) %>%
+  ungroup() %>%
+  mutate(percent = n / sum(n)) %>%
+  arrange(desc(percent))
+```
+
+
+```{r proportions-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What percentage of all observations is in the most popular clarity category?",
+  answer("15%"),
+  answer("24%", correct = TRUE),
+  answer("23%"),
+  answer("17%"),
+  random_answer_order = TRUE
+  ),
+question("What percentage of all observations is in the most popular cut-clarity combination category?",
+  answer("8%"),
+  answer("9%", correct = TRUE),
+  answer("10%"),
+  answer("7%"),
+  random_answer_order = TRUE
+  )
+)
+```
+
+
+### Visualization
+
+Bar charts are most often used to visualize categorical variables. Here we can assess the count of diamonds by color:
+
+```{r}
+ggplot(diamonds, aes(x = color)) +
+  geom_bar()
+```
+
+To make the bar chart easier to digest we can reorder the bars in descending order. Notice how we first count the observations in each color category, then pipe directly into `ggplot`.  Within `ggplot` we specify the `x` and `y` attributes and use `fct_reorder` from the `forcats` package to reorder the color categories based on the total count (`n`).  Since we now incorporate a y variable we need to include `stat = "identity"` within `geom_bar`.  (If you are new to `ggplot` this is likely very confusing; however, learning `ggplot` will allow you to do wonders with visualization!)
+
+```{r}
+library(forcats)
+
+diamonds %>%
+  count(color) %>%
+  ggplot(aes(x = fct_reorder(color, n), y = n)) +
+  geom_bar(stat = "identity")
+```
+
+We can also produce a proportions bar chart where the y-axis now provides the percentage of the total that that category makes up.
+
+```{r}
+diamonds %>%
+  count(color) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = fct_reorder(color, -pct), y = pct)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous("Proportion", labels = scales::percent)
+```
+
+Go ahead and plot a bar chart for the clarity categories.  Can you order the bars?  Can you convert this to a proportions plot?
+
+```{r cat-graph, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+```
+
+```{r cat-graph-hint-1}
+# bar chart for clarity categories
+ggplot(diamonds, aes(clarity)) +
+  geom_bar()
+```
+
+```{r cat-graph-hint-2}
+# order bar chart in descending order
+diamonds %>%
+  count(clarity) %>%
+  ggplot(aes(x = fct_reorder(clarity, -n), y = n)) +
+  geom_bar(stat = "identity")
+```
+
+```{r cat-graph-hint-3}
+# turn into a proportions plot
+diamonds %>%
+  count(clarity) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = fct_reorder(clarity, -pct), y = pct)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous("Proportion", labels = scales::percent)
+```
+
+
+We can also create contingency table-like bar charts by using the `facet_wrap` function to produce small multiples. Here I plot proportions of diamond clarity across each cut.
+
+```{r}
+diamonds %>%
+  count(clarity, cut) %>%
+  group_by(cut) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = fct_reorder(clarity, -pct), y = pct)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous("Proportion", labels = scales::percent) +
+  facet_wrap(~ cut)
+```
+
+We could also extend this to looking at the proportions of clarity based on cut *and* color.  There is a lot going on here but basically this shows that the majority of observations lie in the *Sxx* and *VSx* clarities within the *Very Good, Premium,* and *Ideal* cuts.  Furthermore, we see that there is not a significant difference in observations across colors until you get to *I* and *J*, which are the two worst color ratings.
+
+```{r}
+diamonds %>%
+  count(clarity, cut, color) %>%
+  ungroup() %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(x = fct_reorder(clarity, -pct), y = pct)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous("Proportion", labels = scales::percent) +
+  facet_grid(color ~ cut)
+```
+
+
+## Assessing Correlations
+
+A big part of EDA is to try and understand relationships between variables.  One of the most common ways to identify relationships is through *correlation* analysis.  Correlation is a bivariate analysis that measures the extent that two variables are related (“co-related”) to one another. The value of the correlation coefficient varies between +1 and -1. When the value of the correlation coefficient lies around ±1, then it is said to be a perfect degree of association between the two variables (near +1 implies a strong positive association and near -1 implies a strong negative association). As the correlation coefficient nears 0, the relationship between the two variables weakens with a near 0 value implying no association between the two variables. This section covers the different ways to visualize and assess correlation.
+
+The Pearson correlation is so widely used that when most people refer to correlation they are referring to the Pearson approach. The Pearson product-moment correlation coefficient measures the strength of the linear relationship between two variables and is represented by *r* when referring to a sample or $\rho$ when referring to the population. Considering we most often deal with samples I’ll use *r* unless otherwise noted.
+
+Unfortunately, the assumptions for Pearson’s correlation are often overlooked. These assumptions include:
+
+- Level of measurement: The variables should be continuous. If one or both of the variables are ordinal in measurement, then a Spearman rank correlation should be conducted.
+- Linear relationship: The variables need to be linearly related. If they are not, the data could be transformed (i.e. logarithmic transformation) or a non-parametric approach such as the  Spearman's or Kendall's rank correlation tests could be used.
+- Homoscedasticity: If the variance between the two variables is not constant then *r* will not provide a good measure of association.
+- Bivariate Normality: Technically, Pearson's *r* does not require normality when the sample size is fairly large; however, when the variables consist of high levels of skewness or contain significant outliers it is recommended to use Spearman's rank correlation or, at a minimum, compare Pearson's and Spearman's coefficients.
+
+### Computing Correlations
+
+R provides multiple functions to analyze correlations.  To calculate the correlation between two variables we use `cor()`.  When using `cor()` there are two arguments (other than the variables) that need to be considered.  The first is `use =` which allows us to decide how to handle missing data. The default is `use = everything` but if there is missing data in your data set this will cause the output to be `NA` unless we explicitly state to only use complete observations with `use = complete.obs`. The second argument is `method =` which allows us to specify if we want to use "pearson", "kendall", or "spearman". Pearson is the default method so we do not need to specify for that option.
+
+```{r}
+# Filter NAs to get correlation for complete observations
+cor(diamonds$carat, diamonds$depth, use = 'complete.obs')
+
+# We can also get the correlation matrix for multiple variables but we need
+# to exclude any non-numeric values
+cor(diamonds[map_lgl(diamonds, is.numeric)], use = 'complete.obs')
+```
+
+Unfortunately `cor()` only provides the *r* coefficient(s) and does not test for significance nor provide confidence intervals.  To get these parameters for a simple two variable analysis I use `cor.test()`.  In our example we see that the *p*-value is significant and the 95% confidence interval confirms this as the range does not contain zero. This suggests the correlation between carat and depth is *r* = 0.028 with 95% confidence of being between 0.0198 and 0.0367.  Since this is so close to zero it suggests a very weak relationship between carat and depth.
+
+```{r}
+cor.test(diamonds$carat, diamonds$depth, use = 'complete.obs')
+```
+
+```{r correlation, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+```
+
+```{r correlation-hint-1}
+cor.test(diamonds$carat, diamonds$price, use = 'complete.obs')
+```
+
+```{r correlation-hint-2}
+# Due to the skewness of the carat distribution change the correlation method to 
+# Spearman (method = 'spearman'). Do the results change much?
+cor.test(diamonds$carat, diamonds$price, use = 'complete.obs', method = "spearman")
+```
+
+```{r correlation-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the correlation between carat and price?",
+  answer(".75"),
+  answer(".92", correct = TRUE),
+  answer(".03"),
+  answer(".50"),
+  random_answer_order = TRUE
+  ),
+question("What is the 95% confidence interval?",
+  answer("[.941, .991]"),
+  answer("[.9203, .923]", correct = TRUE),
+  answer("[-.2, .15]"),
+  answer("[.743, .756]"),
+  random_answer_order = TRUE
+  ),
+question("Are the results statistically significant at p-value < .05?",
+  answer("Yes", correct = TRUE),
+  answer("No"),
+  random_answer_order = TRUE
+         ),
+question("Due to the skewness of the carat distribution change the correlation method to Spearman (method = 'spearman'). Do the results change much?",
+  answer("No", correct = TRUE),
+  answer("Yes"),
+  correct = "Correct! Both approaches produce strong correlations (>.90).",
+  incorrect = "Actually, both approaches produce strong correlations (>.90).",
+  random_answer_order = TRUE
+         )
+)
+```
+
+You can also incorporate this into piped functions to streamline your analyses.  For instance, you can calculate the correlation (and p-value) within `summarize`.
+
+```{r}
+diamonds %>%
+  summarize(r = cor(carat, depth),
+            p_value = cor.test(carat, depth)$p.value)
+```
+
+Why is this important?  Because you may want to understand relationships at different categorical levels.  For instance, does the correlation between carat and depth differ depending on the cut of the diamonds? To answer this we just incorporate a `group_by` statement to calculate the correlations and associated p-values for each cut.  We see some differences but at the end of the day all the correlations are extremely weak.
+
+```{r}
+diamonds %>%
+  group_by(cut) %>%
+  summarise(r = cor(carat, depth),
+            p_value = cor.test(carat, depth)$p.value)
+```
+
+
+```{r prepare-data4, echo=FALSE}
+diamonds <- diamonds
+```
+
+```{r correlation2, exercise=TRUE, exercise.setup = "prepare-data4"}
+
+```
+
+```{r correlation2-hint-1}
+diamonds %>%
+  group_by(cut) %>%
+  summarise(r = cor(carat, price),
+            p_value = cor.test(carat, price)$p.value)
+```
+
+
+```{r correlation2-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which cut category has the weakest correlation between carat and price?",
+  answer("Good"),
+  answer("Fair", correct = TRUE),
+  answer("Very Good"),
+  answer("Premium"),
+  answer("Ideal"),
+  random_answer_order = TRUE
+  ),
+question("Which cut category has the stongest correlation between carat and price?",
+  answer("Good"),
+  answer("Fair"),
+  answer("Very Good"),
+  answer("Premium"),
+  answer("Ideal", correct = TRUE),
+  random_answer_order = TRUE
+  ),
+question("What is the correlation between carat and price for the *Ideal* cut category?",
+  answer(".859"),
+  answer(".923"),
+  answer(".926"),
+  answer(".732"),
+  answer(".931", correct = TRUE),
+  random_answer_order = TRUE
+         )
+)
+```
+
+### Visualizing Correlations
+
+A correlation is a single-number measure of the relationship between two variables. Although a very useful measure, it can be hard to image exactly what the association is between two variables based on this single statistic. In contrast, a scatterplot of two variables provides a vivid illustration of the relationship between two variables. In short, a scatterplot can convey much more information than a single correlation coefficient. For instance, the following scatter plot illustrates the relationship between carat and price.
+
+```{r}
+ggplot(diamonds, aes(carat, price)) +
+  geom_point(alpha = .3)
+```
+
+
+Scatter plots such as these are important because they illustrate the linearity of the relationship, which can influence how you approach assessing correlations (i.e. data transformation, using a parametric vs non-parametric test, removing outliers). [Francis Anscombe](https://en.wikipedia.org/wiki/Frank_Anscombe) illustrated this in 1973 when he constructed four data sets that have the same mean, variance, and correlation; however, there are significant differences in the variable relationships. Using the anscombe data, which R has as a built-in data set, the plots below demonstrate the importance of graphing data rather than just relying on correlation coefficients. Each x-y combination in the plots below have a correlation of .82 (strong positive) but there are definitely differences in the association between these variables.
+
+```{r}
+library(gridExtra)
+library(grid)
+
+p1 <- qplot(x = x1, y = y1, data = anscombe)
+p2 <- qplot(x = x2, y = y2, data = anscombe)
+p3 <- qplot(x = x3, y = y3, data = anscombe)
+p4 <- qplot(x = x4, y = y4, data = anscombe)
+
+grid.arrange(p1, p2, p3, p4, ncol = 2,
+             top = textGrob("Anscombe's Quartet"))
+```
+
+So back to our carat vs. price relationship.  Although the correlation of these two variables is .92, this statistic is based on an assumed linear relationship.  We can see that our relationship is not linear.  Plus we see that some outliers exist in which the size of the carat is extremely large (3-5 carats) but the price seems to be capped at just under $20K.  
+
+Although these outliers may have important information, for now let's filter out all diamonds that exceed the 99.5% quantile.  Moreover, we'll transform our price and carat data logarithmically which provides us with a more linear relationship.
+
+```{r}
+diamonds %>%
+  filter(carat < quantile(diamonds$carat, probs = .995)) %>%
+  mutate(lprice = log2(price),
+         lcarat = log2(carat)) %>%
+  ggplot(aes(lcarat, lprice)) +
+  geom_point(alpha = .3) +
+  geom_smooth(method = "lm")
+```
+
+Now we have what appears to be a very strong linear relationship. Can you assess if this relationship holds across all categories of the cut variable?
+
+```{r correlation3, exercise=TRUE, exercise.setup = "prepare-data4"}
+
+```
+
+
+```{r correlation3-hint-1}
+# Can you assess if this relationship holds across all categories of the cut variable?
+diamonds %>%
+  filter(carat < quantile(diamonds$carat, probs = .995)) %>%
+  mutate(lprice = log2(price),
+         lcarat = log2(carat)) %>%
+  ggplot(aes(lcarat, lprice)) +
+  geom_point(alpha = .3) +
+  geom_smooth(method = "lm") +
+  facet_wrap(~ cut)
+```
+
+
+```{r correlation3-hint-2}
+# What is the correlation between carat and price when we remove the outliers 
+# (all diamonds that exceed the 99.5% quantile) and logarithmically transform 
+# our carat and price data?
+diamonds %>%
+  filter(carat < quantile(diamonds$carat, probs = .995)) %>%
+  mutate(lprice = log2(price),
+         lcarat = log2(carat)) %>%
+  summarise(r = cor(lcarat, lprice),
+            p_value = cor.test(lcarat, lprice)$p.value)
+```
+
+
+```{r correlation3-question1, echo=FALSE}
+question("What is the correlation between carat and price when we remove the outliers (all diamonds that exceed the 99.5% quantile) and logarithmically transform our carat and price data?",
+  answer(".929"),
+  answer(".966", correct = TRUE),
+  answer(".853"),
+  answer(".921"),
+  random_answer_order = TRUE
+  )
+```
+
+Visualization can also give you a quick approach to assessing multiple relationships. We can produce scatter plot matrices multiple ways to visualize and compare relationships across the entire data set we are analyzing.  Here we use `ggpairs` from the `GGally` package to look at relationships between carat, price, cut, color, and clarity.
+
+```{r, fig.align='center', fig.height=8, fig.width=7}
+library(GGally)
+
+diamonds %>%
+  select(carat, price, cut, color, clarity) %>%
+  ggpairs()
+```
+
+
+## Comparing Group Means
+
+Hypothesis testing is a useful statistical tool that can be used to draw a conclusion about the population from a sample. Say for instance that you are interested in knowing if the average carat value of the diamonds your company sells differs significantly from the national average within a well defined confidence level.  Or maybe you want to understand if the average price of diamonds across cut categories differ.  These questions can be answered with fundamental hypothesis testing.
+
+### t-test
+
+One of the most common tests in statistics, the t-test, is used to determine whether the means of two groups are equal to each other. The assumption for the test is that both groups are sampled from normal distributions with equal variances. The null hypothesis is that the two means are equal, and the alternative is that they are not. There is also a widely used modification of the t-test, known as Welch’s t-test that adjusts the number of degrees of freedom when the variances are thought not to be equal to each other. This section covers the basics of performing t-tests in R.
+
+#### One-sample t-test
+
+The one-sample t-test compares a sample’s mean with a known value, when the variance of the population is <u>unknown</u>. Consider we want to assess the price of our diamonds sold and compare it to a certain value. For example, let’s assume the nation-wide average of diamonds sold is \$3,500 and we want to know if the mean is significantly different than the national average; in particular we want to test if our average price is less than the national average because if it is than that means we are underpricing our product.
+
+As we mentioned previously the non-normality of the pricing data can be corrected with a log transformation. Although the Central Limit Theorem provides some robustness to the normality assumption, this is important to know so we can test our data a couple different ways to provide a comprehensive conclusion.
+
+```{r}
+p1 <- ggplot(diamonds, aes(price)) + 
+        geom_histogram(binwidth = 100, fill = "white", color = "grey30")
+
+p2 <- ggplot(diamonds, aes(log2(price))) + 
+        geom_histogram(binwidth = .05, fill = "white", color = "grey30")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+To test if our average price is less than the national average I’ll perform three tests. First I test with a normal `t.test` without any distribution transformations. The results below show that our mean is 3932.8. Furthermore, the p-value = 1 which supports the hypothesis that "the true mean is *not* less than \$3,500."
+
+```{r}
+t.test(diamonds$price, mu = 3500, alternative = "less")
+```
+
+However, due to the non-normality concerns we need to perform this test in two additional ways to ensure our results are not being biased due to assumption violations. We can perform the test with `t.test` and transform our data and we can also perform the nonparametric test with the `wilcox.test` function. Both results, provided below, have p-value < .05 which suggests that our initial results were biased and that in fact our average price is less than the national average! In the `t.test` below, with log transformed data, you can see that our average log-transformed diamond price is 11.23 while the national average log-transformed price is 11.77. 
+
+```{r}
+t.test(log2(diamonds$price), mu = log2(3500), alternative = "less")
+
+wilcox.test(diamonds$price, mu = 3500, alternative = "less")
+```
+
+This is why it is important to not just run a particular statistical test without understanding the shape and distribution of the data.  We should always integrate visualizations with our statistical modeling.  If we visualize the log transformed distribution of our prices and compare that to the log transformed mean of the national average we see that, in fact, our average is less than the national average.
+
+```{r}
+ggplot(diamonds, aes(log2(price))) + 
+  geom_histogram(binwidth = .01) + 
+  geom_vline(xintercept = mean(log2(diamonds$price))) + 
+  geom_vline(xintercept = log2(3500), color = "red", linetype = "dashed") +
+  ggtitle("Distribution of diamond sales",
+          subtitle = "Solid black line: our avg. \nDashed red line: national avg.")
+```
+
+```{r prepare-data5}
+diamonds <- diamonds
+```
+
+
+```{r t_test1, exercise=TRUE, exercise.setup = "prepare-data5"}
+
+```
+
+
+```{r t_test1-hint-1}
+# the default t.test tests for a 2-sided comparison.  In other words, it will
+# test if the average price is different, either greater than or less than the
+# national average
+t.test(diamonds$carat, mu = .7)
+
+# here we need to use log1p since |x| < 1
+t.test(log2(diamonds$carat), mu = log2(.7))
+wilcox.test(diamonds$carat, mu = .7)
+```
+
+
+```{r t_test1-hint-2}
+# alternative = "less" will test if our average is less than the national avg
+# here we need to use log1p since |x| < 1
+t.test(diamonds$carat, mu = .7, alternative = "less")
+t.test(log1p(diamonds$carat), mu = log1p(.7), alternative = "less")
+wilcox.test(diamonds$carat, mu = .7, alternative = "less")
+
+# alternative = "greater" will test if our average is greater than the national avg
+t.test(diamonds$carat, mu = .7, alternative = "greater")
+t.test(log1p(diamonds$carat), mu = log1p(.7), alternative = "greater")
+wilcox.test(diamonds$carat, mu = .7, alternative = "greater")
+```
+
+
+```{r test1-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Nationally, the average carat size of diamonds sold is 0.7. Does this differ significantly from the average carat size in our data?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  random_answer_order = TRUE
+  ),
+question("On average are our diamonds greater than or less than the national carat size?",
+  answer("Less than"),
+  answer("Greater than", correct = TRUE),
+  answer("No statistical difference"),
+  random_answer_order = TRUE
+)
+)
+```
+
+
+#### Two-Sample t-test
+
+Now let’s say we want to compare the differences between the average price for diamonds between two cut categories. If you remember earlier in the tutorial we saw that the average price of diamonds in the worst cut (*Fair*) appeared to have higher prices than the diamonds in the best cut (*Ideal*). We can see the difference below. Here, we want to perform a two-sample t-test to see if they are statistically different.
+
+```{r}
+# filter data for just Fair and Ideal cut diamonds
+F_vs_I <- diamonds %>% filter(cut %in% c("Fair", "Ideal"))
+
+# avg prices of these two cuts
+F_vs_I %>%
+  group_by(cut) %>%
+  summarise(Avg = mean(price))
+
+# visualizing the differences in price distributions
+ggplot(F_vs_I, aes(cut, price)) + 
+  geom_boxplot()
+```
+
+We also see similar skewness within the sample distributions.
+
+```{r}
+# left: untransformed distribution
+p1 <- ggplot(F_vs_I, aes(price)) +
+        geom_histogram(binwidth = 100) +
+        facet_grid(cut ~ ., scales = "free")
+
+# right: log-transformed distribution
+p2 <- ggplot(F_vs_I, aes(log2(price))) +
+        geom_histogram(binwidth = .05) +
+        facet_grid(cut ~ ., scales = "free")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+Similar to the previous section, to test if the average prices in the two cuts differ I’ll perform three tests. Also, since it appears the average price in the *Fair* cut (\$4,359) is greater than the average price in the *Ideal* cut (\$3,458), I'll use `alternative = "greater"` to test if this difference is statistially significant. First, I test with a normal `t.test` without any distribution transformations.  Note the slightly different syntax. Here, `price ~ cut` is saying to compare the mean prices by cut.
+
+```{r}
+t.test(price ~ cut, data = F_vs_I, alternative = "greater")
+```
+
+The results provide us the mean of each group. The null hypothesis is that there is <u>no</u> difference between the groups. However, we see that our p-value is extremely small suggesting the difference between the two means is greater than 0.  Furthermore, it shows us that the mean of the *Fair* group is at least \$749 greater than the mean of the *Ideal* group (per the 95% confidence interval). 
+
+We can also test this with our data transformed and with the `wilcox.test`.  Both support our intial findings that the the prices for the worst cut category (*Fair*) is greater than the prices for the best cut category (*Ideal*).  Don't worry, we'll eventually see why!
+
+```{r}
+t.test(log2(price) ~ cut, data = F_vs_I)
+wilcox.test(log2(price) ~ cut, data = F_vs_I)
+```
+
+Go ahead and compare the carat size between the *Fair* and *Ideal* cut categories.
+
+```{r t_test2, exercise=TRUE, exercise.setup = "prepare-data5"}
+F_vs_I <- diamonds %>% filter(cut %in% c("Fair", "Ideal"))
+
+# avg prices of these two cuts
+F_vs_I %>%
+  group_by(cut) %>%
+  summarise(Avg = mean(carat))
+```
+
+
+```{r t_test2-hint-1}
+# visually compare carat sizes in both cateogries
+ggplot(F_vs_I, aes(cut, carat)) + 
+  geom_boxplot()
+
+p1 <- ggplot(F_vs_I, aes(carat)) +
+        geom_histogram(binwidth = .05) +
+        facet_grid(cut ~ ., scales = "free")
+
+p2 <- ggplot(F_vs_I, aes(log1p(carat))) +
+        geom_histogram(binwidth = .01) +
+        facet_grid(cut ~ ., scales = "free")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+
+```{r t_test2-hint-2}
+# compare the groups
+t.test(carat ~ cut, data = F_vs_I, alternative = "greater")
+
+# here we need to use log1p since |x| < 1
+t.test(log1p(carat) ~ cut, data = F_vs_I, alternative = "greater")
+wilcox.test(carat ~ cut, data = F_vs_I, alternative = "greater")
+```
+
+
+```{r test2-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Is there a statistical difference in carat sizes between the *Fair* and *Ideal* cut categories?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  correct = "Correct! All three approaches suggest there is a statistical difference in the means.",
+  random_answer_order = TRUE
+  ),
+question("The average carat size for *Fair* cut diamonds is ________ the average carat size for *Ideal* cut diamonds",
+  answer("less than"),
+  answer("greater than", correct = TRUE),
+  answer("not statistically different"),
+  random_answer_order = TRUE
+)
+)
+```
+
+
+Suppose we wish to extend this test.  Rather than just test for differences between two groups, what if we wish to test whether the mean value is the same across multiple categories.  For example, what if we desire to test if the mean diamond price was the same across all cut categories. Here we turn to analysis of variance (ANOVA).
+
+#### Analysis of Variance
+
+ANOVA will test the hypotheses:
+
+- $H_0: \mu_{Fair} = \mu_{Good} = \mu_{Very \text{ }Good} = \mu_{Premium} = \mu_{Ideal}$
+
+- $H_a: \text{Not all the population means are equal}$
+
+To perform ANOVA in R we can use the `aov` function. The summary of our `anova` object shows us several statistics.  The primary one of interest is the `Pr(>F)`, which is our p-value.  Here our p-value < 2e16, which is extremely small and suggests that not all cut category mean prices are the same.  It basically says that at least one of the cut category mean prices differs from another cut category; however, this doesn't tell us which one.
+
+```{r}
+anova <- aov(price ~ cut, data = diamonds)
+summary(anova)
+```
+
+To identify which cut categories differ with regard to their mean prices we can use the `TukeyHSD` function. The output of `TukeyHSD` provides the pairwise differences (`diff`) for the cut categories, the 95% confidence range (`lwr`, `upr`) and the p-value (`p adj`) for that difference.  
+
+Below we see that average price of diamonds in the *Good* cut category is \$429.89 <u>less than</u> the average price of diamonds in the *Fair* cut category.  Furthermore, this difference is statistically significant at p < 0.01.  However, the average price for the *Premium* and *Fair* cut categories are not statistically different than 0 (the 95% confidence interval includes 0 and the p-value is .195).
+
+```{r}
+TukeyHSD(anova)
+```
+
+We can easily view these differences and their confidence intervals with `plot`.  This is plotting the pair-wise comparisons in the same order as the table output above.
+
+```{r}
+diff <- TukeyHSD(anova)
+plot(diff)
+```
+
+```{r t_test3, exercise=TRUE, exercise.setup = "prepare-data5"}
+
+```
+
+
+```{r t_test3-hint-1}
+# Is there a statistical difference in carat sizes across the cut categories?
+anova <- aov(carat ~ cut, data = diamonds)
+summary(anova)
+```
+
+
+```{r t_test3-hint-2}
+TukeyHSD(anova)
+plot(TukeyHSD(anova))
+```
+
+
+```{r test3-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Is there a statistical difference in carat sizes across the cut categories?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  random_answer_order = TRUE
+  ),
+question("What is the difference between the average carat size in the *Good* cut category as compared to the *Fair* cut category?",
+  answer("-0.154"),
+  answer("-0.197", correct = TRUE),
+  answer("0.04"),
+  answer("0.086"),
+  random_answer_order = TRUE
+  ),
+question("What is the difference between the average carat size in the *Premium* cut category as compared to the *Very Good* cut category?",
+  answer("-0.154"),
+  answer("-0.197"),
+  answer("0.04"),
+  answer("0.086", correct = TRUE),
+  random_answer_order = TRUE
+  )
+)
+```
+
+
+## Conclusion
+
+Although this concludes this tutorial, this is far from a sufficient overview of performing exploratory data analysis. This just illustrates some of the approaches you can take to learn more about your data in preparation of performing statistical modeling. I suggest the following resources to learn more:
+
+**Data Transformation & Manipulation:**
+
+- [R for Data Science](http://r4ds.had.co.nz/)
+- [Data Wrangling with R](https://www.amazon.com/Data-Wrangling-R-Use/dp/3319455982/ref=sr_1_sc_1?ie=UTF8&qid=1492731334&sr=8-1-spell&keywords=data+wrangiling+with+r)
+
+**Data Visualization:**
+
+- [R for Data Science](http://r4ds.had.co.nz/)
+- [R Graphics Cookbook](https://www.amazon.com/Graphics-Cookbook-Practical-Recipes-Visualizing/dp/1449316956/ref=sr_1_5?ie=UTF8&qid=1492731368&sr=8-5&keywords=ggplot2)
+- [Graphical Data Analysis with R](https://www.amazon.com/Graphical-Data-Analysis-Chapman-Hall/dp/1498715230/ref=sr_1_2?ie=UTF8&qid=1492731546&sr=8-2&keywords=exploratory+data+visualization)
+
+**Summary Statistics & Hypothesis Testing:**
+
+- [Statistical Hypothesis Testing with SAS and R](https://www.amazon.com/Statistical-Hypothesis-Testing-SAS-R/dp/111995021X/ref=sr_1_2?ie=UTF8&qid=1492731581&sr=8-2&keywords=hypothesis+testing+r)
+- [Discovering Statistis Using R](https://www.amazon.com/Discovering-Statistics-Using-Andy-Field/dp/1446200469/ref=sr_1_2?ie=UTF8&qid=1492731675&sr=8-2&keywords=statistics+r)
+- [R Cookbook](https://www.amazon.com/Cookbook-Analysis-Statistics-Graphics-Cookbooks/dp/0596809158/ref=pd_sim_14_1?_encoding=UTF8&pd_rd_i=0596809158&pd_rd_r=3EFMZPJHP022PZMRQAHR&pd_rd_w=RPrkU&pd_rd_wg=WykuL&psc=1&refRID=3EFMZPJHP022PZMRQAHR)
+
+[^mode]: There is a `mode()` function in R; however, it is used to get or set the type or storage mode of an object rather than to compute the statistical mode of a variable.
+[^quant]: See Hyndman, R. & Fan, Y. (1996). Sample Quantiles in Statistical Packages, *The American Statistician, 50*(4), 361-365 for more discussion.
+
+

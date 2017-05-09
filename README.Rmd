@@ -1,0 +1,23 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "README-"
+)
+```
+
+# learningAnalytics
+ 
+
+**Author:** [Brad Boehmke](http://bradleyboehmke.github.io/)<br/>
+**License:** [GPL (>= 2)](https://opensource.org/licenses/gpl-license)
+
+
+`learningAnalytics` is an R package that provides a structured learning environment to deliver tutorials covering various statistical learning techniques.
+

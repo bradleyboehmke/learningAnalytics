@@ -1,0 +1,30 @@
+Package: learningAnalytics
+Type: Package
+Title: A structured learning approach for various statistical learning techniques
+Version: 0.1.0
+Author: person("Bradley", "Boehmke", email = "bradleyboehmke@gmail.com", role = c("aut", "cre"))
+Maintainer: Bradley Boehmke <bradleyboehmke@gmail.com>
+Description: Provides a structured learning environment to deliver tutorials 
+    covering various statistical learning techniques.
+License: GPL (>= 2)
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 3.4.0)
+Imports: learnr,
+    tidyverse,
+    moments,
+    outliers,
+    GGally,
+    cluster,
+    factoextra,
+    ISLR,
+    car,
+    caret,
+    MASS,
+    ROCR,
+    grid,
+    gridExtra,
+    pscl,
+    boot,
+    leaps
+RoxygenNote: 6.0.1
