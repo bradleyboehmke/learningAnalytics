@@ -1,0 +1,1279 @@
+---
+title: "Tutorial 3: Linear Regression"
+output: 
+  learnr::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+```{r setup, include=FALSE}
+library(learnr)
+library(tidyverse)
+library(modelr)     # provides easy pipeline modeling functions
+library(broom)      # helps to tidy up model outputs
+library(learningAnalytics)
+
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, collapse=TRUE)
+
+advertising <- learningAnalytics::advertising
+```
+
+
+## Replication Requirements
+
+This tutorial primarily leverages [advertising data](http://www-bcf.usc.edu/~gareth/ISL/Advertising.csv) provided by the authors of [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/index.html) and incorporated into the `learningAnalytics` package. This is a simple data set that contains, in thousands of dollars, `TV`, `Radio`, and `Newspaper` budgets for 200 different markets along with the `Sales`, in thousands of units, for each market.  We'll also use a few packages that provide data manipulation, visualization, pipeline modeling functions, and model output tidying functions.  I've already loaded these packages for you in this tutorial.
+
+```{r, eval=FALSE}
+# Packages
+library(tidyverse)  # data manipulation and visualization
+library(modelr)     # provides easy pipeline modeling functions
+library(broom)      # helps to tidy up model outputs
+```
+
+Go ahead and get a feel for this data by doing some exploratory data analysis.
+
+```{r prepare-data, echo=FALSE}
+advertising <- learningAnalytics::advertising
+```
+
+```{r data, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data"}
+advertising
+```
+
+```{r data-hint-1}
+summary(advertising)
+cor(advertising)
+GGally::ggpairs(advertising)
+```
+
+
+```{r missing, echo=FALSE}
+question("Does this data contain missing values?",
+  answer("Yes"),
+  answer("No", correct = TRUE)
+)
+```
+
+## Preparing Our Data
+
+Now that you've got a feel for the data the first thing we need to do is split up our data set.  Initial discovery of relationships is usually done with a <u>*training*</u> set while a <u>*test*</u> set is used for evaluating whether the discovered relationships hold. More formally, a training set is a set of data used to discover potentially predictive relationships. A test set is a set of data used to assess the strength and utility of a predictive relationship.  In other tutorials[^other] I cover more sophisticated ways for training, validating, and testing predictive models but for the time being we'll use a conventional 60% / 40% split where we training our model on 60% of the data and then test the model performance on 40% of the data that is withheld.
+
+```{r}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+### Exercise
+
+Using the built-in `mtcars` dataset, create training and testing data frames with a 70% / 30% split.  Use a seed value of 315 and name the training data frame `train_cars` and the testing data frame `test_cars`.
+
+```{r create_training, exercise=TRUE}
+
+```
+
+```{r create_training-solution}
+set.seed(315)
+sample <- sample(c(TRUE, FALSE), nrow(mtcars), replace = T, prob = c(0.7,0.3))
+train_cars <- mtcars[sample, ]
+test_cars <- mtcars[!sample, ]
+```
+
+
+```{r training-length, echo=FALSE}
+question("How many observations do you have in the training set?",
+  answer("8"),
+  answer("14"),
+  answer("9"),
+  answer("23", correct = TRUE)
+)
+```
+
+
+## Simple Linear Regression
+
+*Simple linear regression* lives up to its name: it is a very straightforward approach for predicting a quantitative response *Y* on the basis of a single predictor variable *X*. It assumes that there is approximately a linear relationship between *X* and *Y*. Using our advertising data, suppose we wish to model the linear relationship between the TV budget and sales.  We can write this as:
+
+$$ Y = \beta_0 + \beta_1X + \epsilon \tag{1} $$
+
+where: 
+
+- *Y* represents $sales$
+- *X* represents *TV advertising budget*
+- $\beta_0$ is the intercept
+- $\beta_1$ is the coefficient (slope term) representing the linear relationship
+- $\epsilon$ is a mean-zero random error term
+
+### Model Building
+
+To build this model in R we use the formula notation of $Y \sim X$.
+
+```{r}
+model1 <- lm(Sales ~ TV, data = train)
+```
+
+In the background the `lm` function, which stands for "linear model", is producing the best-fit linear relationship by minimizing the *least squares* criterion (alternative approaches will be considered in later tutorials).  This fit can be visualized in the following illustration where the "best-fit" line is found by minimizing the sum of squared errors (the errors are represented by the vertical black line segments).
+
+```{r sq.errors, fig.align='center', fig.width=8, fig.height=4, echo=FALSE}
+train %>%
+  add_predictions(model1) %>%
+  ggplot(aes(TV, Sales)) + 
+  geom_smooth(se=FALSE, method = "lm") +
+  geom_segment(aes(x = TV, y = Sales,
+                   xend = TV, yend = pred)) +
+  geom_point(color="red", size = 2)
+```
+
+For initial assessment of our model we can use `summary`.  This provides us with a host of information about our model, which we'll walk through in the sections that follow.  
+
+```{r}
+summary(model1)
+```
+
+### Exercise
+
+Alternatively, you can also use `glance(model1)` to get a "tidy" result output. Test it out and see how the output compares the `summary(model1)` (don't worry, we'll get into what all this information means shortly).
+
+```{r glance-output-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+```
+
+```{r glance-output, exercise=TRUE}
+
+```
+
+```{r glance-output-solution}
+glance(model1)
+```
+
+```{r letter-a, echo=FALSE}
+question("Can you identify the $R^2$ value in the summary output?  What is the value?",
+  answer("0.6075"),
+  answer("0.0502"),
+  answer("0.6373", correct = TRUE),
+  answer("210.8")
+)
+```
+
+### Exercise
+
+Now, using the `train` data, create a regression model between `Sales` and `Radio` and check out the summary output.
+
+```{r radio-model-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model, exercise=TRUE}
+
+```
+
+```{r radio-model-solution}
+radio_model <- lm(Sales ~ Radio, data = train)
+summary(radio_model)
+```
+
+```{r letter-b, echo=FALSE}
+question("What is the $R^2$ value for this model?",
+  answer("0.3547", correct = TRUE),
+  answer("0.0739"),
+  answer("0.7705"),
+  answer("0.2122")
+)
+```
+
+### Assessing Coefficients
+
+Our original formula in Eq. (1) includes $\beta_0$ for our intercept coefficent and $\beta_1$ for our slope coefficient. If we look at our model results (here we use `tidy` to just print out a tidy version of our coefficent results) we see that our model takes the form of
+
+$$ Sales = 6.76 + 0.05TV + \epsilon \tag{2}$$
+
+```{r, collapse=TRUE}
+tidy(model1)
+```
+
+In other words, our intercept estimate is 6.76 so when the TV advertising budget is zero we can expect sales to be 6,760 (remember we're operating in units of 1,000).  And for every $1,000 increase in the TV advertising budget we expect the average increase in sales to be 50 units.
+
+It's also important to understand if the these coefficients are statistically significant. In other words, can we state these coefficients are statistically different then 0?  To do that we can start by assessing the standard error (SE). The SE for $\beta_0$ and $\beta_1$ are computed with:
+
+$$SE(\beta_0)^2 = \sigma^2\bigg[\frac{1}{n}+\frac{\bar{x}^2}{\sum^n_{i=1}(x_i - \bar{x})^2} \bigg], \quad SE(\beta_1)^2 = \frac{\sigma^2}{\sum^n_{i=1}(x_i - \bar{x})^2}   \tag{3} $$
+where $\sigma^2 = Var(\epsilon)$.  We see that our model results provide the SE (noted as *std.error*).  
+
+```{r std-error, echo=FALSE}
+question("What is the SE for the TV coefficient ($\\beta_1$)?",
+  answer("0.0035", correct = TRUE),
+  answer("0.6076"),
+  answer("0.0503"),
+  answer("14.52")
+)
+```
+
+
+We can use the SE to compute the 95% confidence interval for the coefficients:
+
+$$ \beta_1 \pm 2 \cdot SE(\beta_1)  \tag{4}$$
+
+To get this information in R we can simply use the `confint` function.  
+
+```{r, collapse=TRUE}
+confint(model1)
+```
+
+Our results show us that our 95% confidence interval for $\beta_1$ (TV) is [.043, .057].  Thus, since zero is not in this interval we can conclude that as the TV advertising budget increases by $1,000 we can expect the sales to increase by 43-57 units. This is also supported by the *t-statistic* provided by our results, which are computed by
+
+$$t=\frac{\beta_1 - 0}{SE(\beta_1)}  \tag{5}$$
+
+which measures the number of standard deviations that $\beta_1$ is away from 0.  Thus a large *t-statistic* such as ours (our t-statistic for the TV coefficient is 14.5) will produe a small *p-value* (a small p-value indicates that it is unlikely to observe such a substantial association between the predictor variable and the response due to chance).  Thus, we can conclude that a relationship between TV advertising budget and sales exists.
+
+### Exercise
+
+Go ahead and asess the coefficients for the following `radio_model`.  
+
+```{r radio-model-coeff-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model-coeff, exercise=TRUE, exercise.eval=TRUE}
+radio_model <- lm(Sales ~ Radio, data = train)
+
+
+```
+
+```{r radio-model-coeff-solution}
+radio_model <- lm(Sales ~ Radio, data = train)
+tidy(radio_model)
+confint(radio_model)
+```
+
+```{r radio-model-coeff-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("For every $1,000 increase in the Radio advertising budget we expect the average increase in sales to be...",
+  answer("175 units"),
+  answer("212 units", correct = TRUE),
+  answer("50 units"),
+  correct = "Correct! Since the Radio coefficient estimate is 0.212, a $1,000 increase in the Radio advertising budget should produce an increase of 1,000 x 0.212 = 212 sales units.",
+  incorrect = "Since the Radio coefficient estimate is 0.212, a $1,000 increase in the Radio advertising budget should produce an increase of 1,000 x 0.212 = 212 sales units."
+),
+question("Is the p-value for the Radio coefficient statistically significant at the p < 0.05 level? ",
+  answer("Yes", correct = TRUE),
+  answer("No"),
+  correct = "Correct! The p-value is 4.64e-13, which is less than p < 0.05.",
+  incorrect = "The p-value is 4.64e-13, which is less than p < 0.05."
+),
+question("Based on the 95% confidence interval for the Radio coefficient we can state that for every $1,000 increase in the Radio advertising budget we expect the average increase in sales to be between...",
+  answer("794-1,087 units"),
+  answer("160-264 units", correct = TRUE),
+  answer("50-75 units"),
+  correct = "Correct! Using the confint function on radio_model provides the 95% confidence interval.",
+  incorrect = "Using the confint function on radio_model provides the 95% confidence interval."
+)
+)
+```
+
+### Assessing Model Accuracy
+
+Next, we want to understand the extent to which the model fits the data. This is typically referred to as the *goodness-of-fit*.  We can measure this quantitatively by assessing three things:
+
+1. Residual standard error (RSE)
+2. $R^2$
+3. F-statistic
+
+The RSE is an estimate of the standard deviation of $\epsilon$. Roughly speaking, it is the average amount that the response will deviate from the true regression line. It is computed by:
+
+$$ RSE = \sqrt{\frac{1}{n-2}\sum^n_{i=1}(y_i - \hat{y}_i)^2} \tag{6}$$
+
+We get the RSE at the bottom of `summary(model1)`, we can also get it directly with
+
+```{r}
+sigma(model1)
+```
+
+An RSE value of 3.2 means the actual sales in each market will deviate from the true regression line by approximately 3,200 units, on average. Is this significant?  Well, that's subjective but when compared to the average value of sales over all markets the percentage error is 22%:
+
+```{r}
+sigma(model1)/mean(train$Sales)
+```
+
+
+The RSE provides an absolute measure of lack of fit of our model to the data. But since it is measured in the units of $Y$, it is not always clear what constitutes a good RSE. The $R^2$ statistic provides an alternative measure of fit. It represents the proportion of variance explained and so it always takes on a value between 0 and 1, and is independent of the scale of $Y$. $R^2$ is simply a function of *residual sum of squares* (RSS) and *total sum of squares* (TSS):
+
+$$ R^2 = 1 - \frac{RSS}{TSS}= 1 - \frac{\sum^n_{i=1}(y_i-\hat{y}_i)^2}{\sum^n_{i=1}(y_i-\bar{y}_i)^2} \tag{7}$$
+
+Similar to RSE the $R^2$ can be found at the bottom of `summary(model1)` but we can also get it directly with `rsquare`.  The result suggests that TV advertising budget can explain 64% of the variability in our sales data.
+
+```{r}
+rsquare(model1, data = train)
+```
+
+As a side note, in a simple linear regression model the $R^2$ value will equal the squared correlation between $X$ and $Y$:
+
+```{r}
+# note how this equals the rsquare result from above
+cor(train$TV, train$Sales)^2
+```
+
+Lastly, the *F-statistic* tests to see if at least one predictor variable has a non-zero coefficient.  This becomes more important once we start using multiple predictors as in multiple linear regression; however, we'll introduce it here.  The F-statistic is computed as:
+
+$$F = \frac{(TSS-RSS)/p}{RSS/(n-p-1)} \tag{8} $$
+
+Hence, a larger F-statistic will produce a statistically significant p-value ($p < 0.05$).  In our case we see at the bottom of our summary statement that the F-statistic is 210.8 producing a p-value of $p<2.2e-16$.
+
+Combined, our RSE, $R^2$, and F-statistic results suggest that our model has an ok fit; however, as we'll see shortly there are additional ways to assess our model.
+
+### Exercise 5
+
+Check out the RSE, $R^2$, and F-statistic for the following `radio_model`.
+
+```{r radio-model-accuracy-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model-accuracy, exercise=TRUE, exercise.eval=TRUE}
+radio_model <- lm(Sales ~ Radio, data = train)
+
+
+```
+
+```{r radio-model-accuracy-solution}
+radio_model <- lm(Sales ~ Radio, data = train)
+tidy(radio_model)
+confint(radio_model)
+```
+
+```{r radio-model-accuracy-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the RSE for the radio_model?",
+  answer("3.725"),
+  answer("4.274", correct = TRUE),
+  answer("0.3547"),
+  answer("0.2122")
+),
+question("What is the $R^2$ value? ",
+  answer("3.725"),
+  answer("4.274"),
+  answer("0.3547", correct = TRUE),
+  answer("0.2122")
+),
+question("What is the F-statistic value and it's respective p-value.",
+  answer("$F = 3.725, p > 0.05$"),
+  answer("$F = 3.725, p < 0.05$"),
+  answer("$F = 65.96, p > 0.05$"),
+  answer("$F = 65.96, p < 0.05$", correct = TRUE)
+)
+)
+```
+
+
+### Assessing Our Model Visually
+
+Not only is it important to understand quantitative measures regarding our coefficient and model accuracy but we should also understand visual approaches to assess our model.  First, we should always visualize our model *within* our data when possible.  For simple linear regression this is quite simple.  Here we use `geom_smooth(method = "lm")` followed by `geom_smooth()`.  This allows us to compare the linearity of our model (blue line with the 95% confidence interval in shaded region) with a non-linear LOESS model (red line). Considering the LOESS smoother remains within the confidence interval we can assume the linear trend fits the essence of this relationship.  However, we do note that as the TV advertising budget gets closer to 0 there is a stronger reduction in sales beyond what the linear trend follows.
+
+```{r plot1, fig.align='center', fig.height=4, fig.width=6}
+ggplot(train, aes(TV, Sales)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_smooth(se = FALSE, color = "red")
+```
+
+### Exericse
+
+Go ahead and plot the linear relationship between the Sales and Radio variables.  How about Sales and Newspaper?
+
+```{r radio-model-plot1-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model-plot1, exercise=TRUE, fig.align='center'}
+
+
+```
+
+```{r radio-model-plot1-solution}
+# plot Sales ~ Radio relationship
+ggplot(train, aes(Radio, Sales)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_smooth(se = FALSE, color = "red")
+
+# plot Sales ~ Newspaper relationship
+ggplot(train, aes(Newspaper, Sales)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_smooth(se = FALSE, color = "red")
+```
+
+
+An important part of assessing regression models is visualizing residuals. If you use `plot(model1)` four residual plots will be produced that provide some important insights.  However, you can dictate which plot you want to see with `which = n`.  Change *n* to equal 1-5 and the plots that correspond with the following insights will be illustrated.
+
+1. **Residuals vs Fitted values** plot(model1, which = 1):  This will signal two important concerns:
+   - Non-linearity: if a discernible pattern (blue line) exists then this suggests either non-linearity or that other attributes have not been adequately captured. Our plot indicates that the assumption of linearity is fair.
+   - Heteroskedasticity: an important assumption of linear regression is that the error terms have a constant variance, $Var(\epsilon_i)=\sigma^2$. If there is a funnel shape with our residuals, as in our plot, then we've violated this assumption.  Sometimes this can be resolved with a log or square root transformation of $Y$ in our model.
+2. **Q-Q Plot** plot(model1, which = 2): assesses the normality of our residuals. A Q-Q plot plots the distribution of our residuals against the theoretical normal distribution.  The closer the points are to falling directly on the diagonal line then the more we can interpret the residuals as normally distributed.  If there is strong snaking or deviations from the diagonal line then we should consider our residuals non-normally distributed.  In our case we have a little deviation in the bottom left-hand side which likely is the concern we mentioned earlier that as the TV advertising budget approaches 0 the relationship with sales appears to start veering away from a linear relationship.
+3. **Scale-Location** plot(model1, which = 3): Provides two forms of insight:
+    - It plots standardized residuals to show where residuals deviate by 1, 2, 3+ standard deviations.  This helps us to identify outliers that exceed 3 standard deviations.  
+    - It shows if residuals are spread equally along the ranges of predictors. This helps to confirm any concerns regarding equal variance (homoscedasticity). It’s good if you see a horizontal line with equally (randomly) spread points.
+4. **Cook's Distance**  plot(model1, which = 4): Data points with large residuals (outliers) and/or high leverage may distort the outcome and accuracy of a regression model. Cook's distance measures the effect of deleting a given observation. Points with a large Cook's distance are considered to merit closer examination in the analysis.
+5. **Residuals vs Leverage**  plot(model1, which = 5): This is another way to identify influential points. In this plot observations have high Cook’s distance scores and are to the upper or lower right of our leverage plot have *leverage* meaning they are influential to the regression results. The regression results will be altered if we exclude these observations.
+
+```{r radio-model-residual-plot-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+```
+
+```{r radio-model-residual-plot, exercise=TRUE, fig.align='center', exercise.eval=TRUE}
+# change which to equal 1-5 to show the plots that align with the bullet points above
+plot(model1, which = 1)
+
+```
+
+
+
+### Exercise
+
+Go ahead and assess the residual plots for the `radio_model`.
+
+```{r radio-model-resid-plots-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model-resid-plots, exercise=TRUE, fig.align='center'}
+radio_model <- lm(Sales ~ Radio, data = train)
+
+```
+
+```{r radio-model-resid-plots-solution}
+plot(radio_model, which = 1)
+plot(radio_model, which = 2)
+plot(radio_model, which = 3)
+plot(radio_model, which = 4)
+plot(radio_model, which = 5)
+```
+
+```{r radio-model-resid-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Is there evidence of heteroskedasticity?",
+  answer("No, the variance appears constant"),
+  answer("Yes, there appears to be some funneling of the residuals", correct = TRUE),
+  correct = "Correct! Using plot(radio_model, which = 1) shows a slight funnel shape of the residuals (residuals to the right of the plot have more variance than those to the left).",
+  incorrect = "Using plot(radio_model, which = 1) shows a slight funnel shape of the residuals (residuals to the right of the plot have more variance than those to the left)."
+),
+question("Which observations have the largest residuals? (select ALL that apply)",
+  answer("2"),
+  answer("3", correct = TRUE),
+  answer("47", correct = TRUE),
+  answer("77", correct = TRUE),
+  correct = "Correct! Using plot(radio_model, which = 3) we see these observations identified as having the largest standardized residuals.",
+  incorrect = "Using plot(radio_model, which = 3) we see these observations identified as having the largest standardized residuals."
+),
+question("Which observations are outliers that appear to be the most influential in this model? (select ALL that apply)",
+  answer("2", correct = TRUE),
+  answer("3", correct = TRUE),
+  answer("15"),
+  answer("45", correct = TRUE),
+  correct = "Correct! Using plot(radio_model, which = 4:5) we see these observations identified as being the most 'influential'.",
+  incorrect = "Using plot(radio_model, which = 4:5) we see these observations identified as being the most 'influential'."
+)
+)
+```
+
+So, what does having patterns in residuals mean to your research? It’s not just a go-or-stop sign. It tells you about your model and data. Your current model might not be the best way to understand your data and residuals can help point you to areas for further investigation. Never take numerical results alone when modeling, always assess your results both numerically *and* visually.
+
+**Checking residuals is a way to discover new insights in your model and data!**
+
+### Making Predictions
+
+Often the goal with regression approaches is to make predictions on new data.  To assess how well our model will do in this endeavor we need to assess how it does in making predictions against our test data set.  This informs us how well our model generalizes to data outside our training set.  
+
+We can use our model to predict Sales values for our test data by using `add_predictions`. `add_predictions` applies our regression model to the test data observations.
+
+```{r}
+test <- test %>% 
+  add_predictions(model1)
+
+test
+```
+
+The primary concern is to assess if the out-of-sample (*test*) mean squared error (MSE), also known as the mean squared prediction error, is substantially higher than the in-sample mean square error, as this is a sign of deficiency in the model.  The MSE is computed as
+
+$$MSE = \frac{1}{n} \sum^n_{i=1}(y_i - \hat{y}_i)^2 \tag{9}$$
+
+We can easily compare the test sample MSE to the training sample MSE with the following.  The difference is not that significant. 
+
+```{r}
+# test MSE
+test %>% 
+  add_predictions(model1) %>%
+  summarise(MSE = mean((Sales - pred)^2))
+
+# training MSE
+train %>% 
+  add_predictions(model1) %>%
+  summarise(MSE = mean((Sales - pred)^2))
+```
+
+However, this practice becomes more powerful when you are comparing multiple models.
+
+### Exercise
+
+Compute and compare the MSE for the `radio_model`, `tv_model`, and `newspaper_model` below. 
+
+```{r radio-model-mse-setup, echo=FALSE}
+advertising <- learningAnalytics::advertising
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+```
+
+```{r radio-model-mse, exercise=TRUE, fig.align='center'}
+radio_model <- lm(Sales ~ Radio, data = train)
+tv_model <- lm(Sales ~ Radio, data = train)
+newspaper_model <- lm(Sales ~ Radio, data = train)
+
+```
+
+```{r radio-model-mse-solution}
+# What is the MSE value for the radio_model?
+test %>% 
+  add_predictions(radio_model) %>%
+  summarise(MSE = mean((Sales - pred)^2))
+
+# What is the MSE value for the tv_model
+test %>% 
+  add_predictions(tv_model) %>%
+  summarise(MSE = mean((Sales - pred)^2))
+
+# What is the MSE value for the newspaper_model
+test %>% 
+  add_predictions(newspaper_model) %>%
+  summarise(MSE = mean((Sales - pred)^2))
+```
+
+```{r radio-model-mse-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the MSE value for the radio_model?",
+  answer("26.39"),
+  answer("13.76"),
+  answer("10.09"),
+  answer("17.96", correct = TRUE)
+),
+question("What is the MSE value for the tv_model?",
+  answer("26.39"),
+  answer("13.76"),
+  answer("10.09", correct = TRUE),
+  answer("17.96")
+),
+question("What is the MSE value for the newspaper_model?",
+  answer("26.72", correct = TRUE),
+  answer("13.76"),
+  answer("10.09"),
+  answer("17.96")
+),
+question("Which model is preferred between the three?",
+  answer("radio_model"),
+  answer("tv_model", correct = TRUE),
+  answer("newspaper_model"),
+  correct = "Correct! A lower MSE singles a more accurate model on for an out-of-sample data set. In other words it generalizes better."
+)
+)
+```
+
+
+## Multiple Regression
+
+Simple linear regression is a useful approach for predicting a response on the basis of a single predictor variable. However, in practice we often have more than one predictor. For example, in the Advertising data, we have examined the relationship between sales and TV advertising. We also have data for the amount of money spent advertising on the radio and in newspapers, and we may want to know whether either of these two media is associated with sales. How can we extend our analysis of the advertising data in order to accommodate these two additional predictors?
+
+We can extend the simple linear regression model so that it can directly accommodate multiple predictors. We can do this by giving each predictor a separate slope coefficient in a single model. In general, suppose that we have *p* distinct predictors. Then the multiple linear regression model takes the form
+
+$$ Y = \beta_0 + \beta_1X_1 + \beta_1X_2 + \cdots + \beta_pX_p + \epsilon \tag{10}$$
+
+### Model Building
+
+If we want to run a model that uses TV, Radio, and Newspaper to predict Sales then we build this model in R using a similar approach introduced in the Simple Linear Regression tutorial.
+
+```{r}
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+```
+
+Go ahead and assess this model as before using `summary` or `glance`:
+
+```{r prepare-model2, warning=FALSE, message=FALSE}
+advertising <- learningAnalytics::advertising 
+
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6, 0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+```
+
+```{r model2, exercise=TRUE, exercise.setup = "prepare-model2"}
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+```
+
+```{r model2-solution}
+summary(model2)
+glance(model2)
+```
+
+### Assessing Coefficients
+
+Now let's go ahead and assess the coefficients. 
+
+```{r model2-coeff, exercise=TRUE, exercise.setup = "prepare-model2"}
+
+```
+
+```{r model2-coeff-hint-1}
+# remember these functions?
+tidy(model2)
+summary(model2)
+confint(model2)
+```
+
+```{r model2-coeff-solution}
+# remember these functions?
+tidy(model2)
+summary(model2)
+confint(model2)
+```
+
+### Exercise
+
+What is your interpretation of these coefficients?
+
+```{r model2-coeff-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which predictor variables are statistically significant with $p < .05$?",
+  answer("TV", correct = TRUE),
+  answer("Radio", correct = TRUE),
+  answer("Newspaper")
+),
+question("The TV coefficent suggests that for every $1,000 increase in TV advertising budget, *holding all other predictors constant*, we can expect an increase of how many units, on average?",
+  answer("4.7"),
+  answer("47", correct = TRUE),
+  answer("196"),
+  answer("0.047")
+),
+question("The Radio coefficent suggests that for every $1,000 increase in Radio advertising budget, *holding all other predictors constant*, we can expect an increase of how many units, on average?",
+  answer("4.7"),
+  answer("47"),
+  answer("196", correct = TRUE),
+  answer("0.196")
+),
+question("Select the correct confidence intervals for the predictor variables?",
+  answer("TV (.044, .051), Radio (.176, .217), Newspaper (-.023, .002)", correct = TRUE),
+  answer("TV (-.004, .059), Radio (.176, .217), Newspaper (-.013, .012)"),
+  answer("TV (.044, .051), Radio (.176, .217), Newspaper (.023, .002)")
+),
+question("So which predictor variables appear to be related to sales?",
+  answer("TV", correct = TRUE),
+  answer("Radio", correct = TRUE),
+  answer("Newspaper"),
+  correct = "Correct! The TV and Radio coefficients are statistically significant while the Newspaper coefficient is not.",
+  incorrect = "The TV and Radio coefficients are statistically significant while the Newspaper coefficient is not."
+)
+)
+```
+
+
+
+### Assessing Model Accuracy
+
+Assessing model accuracy for multiple regression is very similar as when assessing simple linear regression models.  Rather than repeat the discussion, here I will highlight a few key considerations. First, multiple regression is when the F-statistic becomes more important as this statistic is testing to see if *at least one of the coefficients is non-zero*. When there is no relationship between the response and predictors, we expect the F-statistic to take on a value close to 1. On the other hand, if at least one predictor has a relationship then we expect $F > 1$. 
+
+### Exercise
+
+Assess the F-statistic for our model.
+
+```{r model2-fstat, exercise=TRUE, exercise.setup = "prepare-model2"}
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+
+```
+
+```{r model2-fstat-hint-1}
+# remember these functions?
+summary(model2)
+glance(model2)
+```
+
+```{r model2-fstat-solution}
+summary(model2)
+glance(model2)
+```
+
+
+```{r model2-fstat-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the F-statistic value?",
+  answer("1.527"),
+  answer("118"),
+  answer("445.9", correct = TRUE),
+  answer("0.9189")
+),
+question("Is the F-statistic statistically significant (p < 0.05)?",
+  answer("No"),
+  answer("Yes", correct = TRUE)
+),
+question("So, is at least one predictor variable related to sales?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  correct = "Since F = 445.9 with p < 0.05, this suggests that at least one of the advertising media must be related to sales."
+)
+)
+```
+
+<br>
+
+In addition, if we compare the results from our simple linear regression model (`model1`) and our multiple regression model (`model2`) we can make some important comparisons:
+
+```{r}
+list(model1 = glance(model1), 
+     model2 = glance(model2))
+```
+
+1. **$R^2$**: Model 2's $R^2=.92$ is substantially higher than model 1 suggesting that model 2 does a better job explaining the variance in sales. It's also important to consider the *adjusted* $R^2$.  The *adjusted* $R^2$ is a modified version of $R^2$ that has been adjusted for the number of predictors in the model. The *adjusted* $R^2$ increases only if the new term improves the model more than would be expected by chance. Thus, since model 2's *adjusted* $R^2$ is also substantially higher than model 1 we confirm that the additional predictors are improving the model's performance.
+2. **RSE**: Model 2's RSE (`sigma`) is lower than model 1.  This shows that model 2 reduces the variance of our error ($\epsilon$) parameter which corroborates our conclusion that model 2 does a better job modeling sales.
+3. **F-statistic**: the F-statistic (`statistic`) in model 2 is larger than model 1.  Here larger is better and suggests that model 2 provides a better "goodness-of-fit".
+4. **Other**: We can also use other various statistics to compare the quality of our models. These include Akaike information criterion (AIC) and Bayesian information criterion (BIC), which we see in our results, among others.  I go into more details regarding these statistics in the [Linear Model Selection tutorial](http://uc-r.github.io/model_selection) but for now just know that models with lower AIC and BIC values are considered of better quality than models with higher values.
+
+So we understand that quantitative attributes of our second model suggest it is a better fit, how about visually?
+
+
+### Assessing Our Model Visually
+
+Our main focus is to assess and compare residual behavior with our models.  First, if we compare model 2's residuals versus fitted values we see that model 2 has reduced concerns with heteroskedasticity (less funneling); however, model 2 shows a discernible pattern suggesting concerns of linearity.  We'll see one way to address this in the next section.
+
+```{r plot6, fig.align='center', fig.height=3, fig.width=9}
+# add model diagnostics to our training data
+model1_results <- augment(model1, train) %>%
+  mutate(Model = "Model 1")
+
+model2_results <- augment(model2, train) %>%
+  mutate(Model = "Model 2") %>%
+  rbind(model1_results)
+
+ggplot(model2_results, aes(.fitted, .resid)) +
+  geom_ref_line(h = 0) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ Model) +
+  ggtitle("Residuals vs Fitted")
+```
+
+### Exercise
+
+Go ahead and assess the residual plots for `model2` (and `model1` for comparison) using the `plot` function.
+
+```{r prepare-model2more, warning=FALSE, message=FALSE}
+advertising <- learningAnalytics::advertising
+
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6, 0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+```
+
+```{r model2-vs-model1, exercise=TRUE, exercise.setup = "prepare-model2more"}
+
+
+```
+
+```{r model2-vs-model1-solution}
+plot(model2, which = 1)
+plot(model2, which = 2)
+plot(model2, which = 3)
+plot(model2, which = 4)
+plot(model2, which = 5)
+```
+
+```{r model2-vs-model1-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Do your residual plots confirm our concern with linearity?",
+  answer("No"),
+  answer("Yes", correct = TRUE),
+  correct = "Both the Residuals vs Fitted and Q-Q plot suggest there are concerns with linearity.",
+  incorrect = "Both the Residuals vs Fitted and Q-Q plot suggest there are concerns with linearity."
+),
+question("Which outier observations do we see being highlighted in our residual plots?",
+  answer("3", correct = TRUE),
+  answer("18", correct = TRUE),
+  answer("47", correct = TRUE),
+  answer("56"),
+  answer("77", correct = TRUE),
+  correct = "Correct! We see observations 3, 18, and 77 highlighted as outlier residuals and we see observations 3, 18, and 47 highlighted as influential residuals.",
+  incorrect = "We see observations 3, 18, and 77 highlighted as outlier residuals and we see observations 3, 18, and 47 highlighted as influential residuals."
+)
+)
+```
+
+### Making Predictions
+
+To see how our models compare when making predictions on an out-of-sample data set we'll compare the MSE. First, do you remember how to add the predicted values to the test data?  See if you can add the prediction values to the `test` data based on `model2` and compute the MSE.
+
+```{r model2-pred, exercise=TRUE, exercise.setup = "prepare-model2more"}
+
+
+```
+
+```{r model2-pred-hint-1}
+# first add the predictions
+test %>%
+  add_predictions(model2)
+```
+
+```{r model2-pred-hint-2}
+# next compute MSE within the summarize function
+test %>%
+  add_predictions(model2) %>%
+  summarise(MSE = mean((Sales-pred)^2))
+```
+
+Not bad.  So this gives us our out-of-sample prediction MSE based on `model2`; however, we'll want to compare this to `model1` to see if our prediction accuracy has improved with `model2`.  Here we can use `gather_predictions` to predict on our test data with both model 1 and 2 and then, as before, compute the MSE.  We see that model 2 drastically reduces MSE on the out-of-sample (test) data.  So although we still have lingering concerns over residual normality model 2 is still the preferred model so far.
+
+```{r}
+test %>%
+  gather_predictions(model1, model2) %>%
+  group_by(model) %>%
+  summarise(MSE = mean((Sales-pred)^2))
+```
+
+
+## Incorporating Interactions
+
+In our previous analysis of the Advertising data, we concluded that both TV and radio seem to be associated with sales. The linear models that formed the basis for this conclusion assumed that the effect on sales of increasing one advertising medium is independent of the amount spent on the other media. For example, the linear model (Eq. 10) states that the average effect on sales of a one-unit increase in TV is always $\beta_1$, regardless of the amount spent on radio.
+
+However, this simple model may be incorrect. Suppose that spending money on radio advertising actually increases the effectiveness of TV advertising, so that the slope term for TV should increase as radio increases. In this situation, given a fixed budget of $100,000, spending half on radio and half on TV may increase sales more than allocating the entire amount to either TV or to radio. In marketing, this is known as a *synergy* effect, and in statistics it is referred to as an *interaction* effect.  One way of extending our model 2 to allow for interaction effects is to include a third predictor, called an *interaction term*, which is constructed by computing the product of $X_1$ and $X_2$ (here we'll drop the Newspaper variable). This results in the model
+
+$$ Y = \beta_0 + \beta_1X_1 + \beta_2X_2 + \beta_3X_1X_2 + \epsilon \tag{11}$$
+
+Now the effect of $X_1$ on $Y$ is no longer constant as adjusting $X_2$ will change the impact of $X_1$ on $Y$.  We can interpret $\beta_3$ as the increase in the effectiveness of TV advertising for a one unit increase in radio advertising (or vice-versa).  To perform this in R we can use either of the following.  Note that option B is a shorthand version as when you create the interaction effect with `*`, R will automatically retain the *main effects*.
+
+
+```{r prepare-model3, warning=FALSE, message=FALSE}
+advertising <- learningAnalytics::advertising
+
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6, 0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+```
+
+```{r}
+# option A
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+
+# option B
+model3 <- lm(Sales ~ TV * Radio, data = train)
+```
+
+Go ahead and assess this model using `summary` or `glance`:
+
+
+```{r model3, exercise=TRUE, exercise.setup = "prepare-model3"}
+
+```
+
+```{r model3-solution}
+summary(model3)
+glance(model3)
+```
+
+
+### Assessing Coefficients
+
+Go ahead and check out the coefficients for model3:
+
+```{r model3-coeff, exercise=TRUE, exercise.setup = "prepare-model3"}
+
+```
+
+```{r model3-coeff-solution}
+tidy(model3)
+summary(model3)
+```
+
+We can interpret these coefficients as follows: an increase in TV advertising of \$1,000 is associated with increased sales of $(\beta_1+\beta_3\times \text{Radio}) \times 1000 = 21 + 1 \times \text{Radio}$.  And an increase in Radio advertising of \$1,000 will be associated with an increase in sales of $(\beta_2+\beta_3\times \text{TV}) \times 1000 = 39 + 1 \times \text{TV}$.  
+
+```{r model3-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Are all coefficients statistically significant (p < 0.05)?",
+  answer("No"),
+  answer("Yes", correct = TRUE)
+),
+question("What is the 95% confidence interval around the TV*Radio interaction coefficient  ($\\beta_3$)?",
+  answer("[0.01807, 0.05999]"),
+  answer("[0.01707, 0.02450]"),
+  answer("[5.88769, 7.10708]"),
+  answer("[0.00089, 0.00113]", correct = TRUE)
+)
+)
+```
+
+
+### Assessing Model Accuracy
+
+Go ahead and compare the model results across all three models (`model1`, `model2`, `model3`).
+
+```{r model3-accuracy, exercise=TRUE, exercise.setup = "prepare-model3"}
+model1 <- lm(Sales ~ TV, data = train)
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+```
+
+```{r model3-accuracy-hint-1}
+# try using the glance() function
+```
+
+```{r model3-accuracy-solution}
+list(model1 = glance(model1), 
+     model2 = glance(model2),
+     model3 = glance(model3))
+```
+
+```{r model3-question2, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("When comparing model 3 to models 1 & 2, model 3 has (Select all that apply)",
+  answer("a higher adjusted $R^2$ value", correct = TRUE),
+  answer("a smaller RSE", correct = TRUE),
+  answer("a larger F-statistic", correct = TRUE),
+  answer("a smaller AIC", correct = TRUE),
+  answer("a smaller BIC", correct = TRUE)
+),
+question("What can we conclude from this?",
+  answer("Model 1 out performs the other models"),
+  answer("Model 2 out performs the other models"),
+  answer("Model 3 out performs the other models", correct = TRUE)
+)
+)
+```
+
+
+
+### Assessing Our Model Visually
+
+Visually assessing our residuals versus fitted values we see that model three does a better job with constant variance and, with the exception of the far left side, does not have any major signs of non-normality.  
+
+
+```{r plot8, fig.align='center', fig.height=3, fig.width=9}
+# add model diagnostics to our training data
+model3_results <- augment(model3, train) %>%
+  mutate(Model = "Model 3") %>%
+  rbind(model2_results)
+
+ggplot(model3_results, aes(.fitted, .resid)) +
+  geom_ref_line(h = 0) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ Model) +
+  ggtitle("Residuals vs Fitted")
+```
+
+As an alternative to the Q-Q plot we can also look at residual histograms for each model.  Here we see that model 3 has a couple large left tail residuals.  These are related to the left tail dip we saw in the above model 3 plot.
+
+```{r plot9, fig.align='center', fig.height=4, fig.width=9}
+ggplot(model3_results, aes(.resid)) +
+  geom_histogram(binwidth = .25) +
+  facet_wrap(~ Model, scales = "free_x") +
+  ggtitle("Residual Histogram")
+```
+
+These residuals can be tied back to when our model is trying to predict low levels of sales (< 10,000).  If we remove these sales our residuals are more normally distributed.  What does this mean?  Basically our linear model does a good job predicting sales **over 10,000 units** based on TV and Radio advertising budgets; however, the performance deteriorates when trying to predict sales less than 10,000 because our linear assumption does not hold for this segment of our data.
+
+```{r plot10, fig.align='center', fig.height=4, fig.width=9}
+# look at the residuals of our model when predicting sales over 10,000
+model3_results %>%
+  filter(Sales > 10) %>%
+  ggplot(aes(.resid)) +
+  geom_histogram(binwidth = .25) +
+  facet_wrap(~ Model, scales = "free_x") +
+  ggtitle("Residual Histogram")
+```
+
+Can you think of a way to corroborate this by looking at residual plots and the training data?
+
+```{r prepare-model3more, warning=FALSE, message=FALSE}
+advertising <- learningAnalytics::advertising 
+
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace = T, prob = c(0.6, 0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+model1 <- lm(Sales ~ TV, data = train)
+model2 <- lm(Sales ~ TV + Radio + Newspaper, data = train)
+model3 <- lm(Sales ~ TV + Radio + TV * Radio, data = train)
+```
+
+```{r model3-resids, exercise=TRUE, exercise.setup = "prepare-model3more", fig.align='center', fig.height=4, fig.width=9}
+
+```
+
+```{r model3-resids-hint-1}
+# Check out the Cook's Distance and Leverage plots, what are these plots telling you?
+par(mfrow=c(1, 2))
+
+plot(model3, which = 4, id.n = 5)
+plot(model3, which = 5, id.n = 5)
+```
+
+```{r model3-resids-hint-2}
+# If we index our training data for the observations identified in the previous 
+# plots we see that they all have low Sales levels.
+train[c(3, 5, 47, 65, 94),]
+```
+
+### Making Predictions
+
+Now let's assess how well our interaction model (model3) performs on our test data compared to models 1 & 2. To do this we’ll compare the MSEs across all our models. Can you add the predicted values to the test data for all three models and compute/compare each model's MSE.
+
+```{r model3-pred, exercise=TRUE, exercise.setup = "prepare-model3more"}
+
+
+```
+
+```{r model3-pred-hint-1}
+# first add the predictions for all three models
+test %>%
+  gather_predictions(model1, model2, model3)
+```
+
+```{r model3-pred-hint-2}
+# next group the data by each model
+test %>%
+  gather_predictions(model1, model2, model3) %>%
+  group_by(model)
+```
+
+```{r model3-pred-hint-3}
+# last, compuate the MSE across all three models
+test %>%
+  gather_predictions(model1, model2, model3) %>%
+  group_by(model) %>%
+  summarise(MSE = mean((Sales-pred)^2))
+```
+
+Here we see that model 3 has the lowest out-of-sample MSE, further supporting the case that it is the best model and has not overfit our data.
+
+## Additional Considerations
+
+### Qualitative Predictors
+
+In our discussion so far, we have assumed that all variables in our linear regression model are *quantitative*. But in practice, this is not necessarily the case; often some predictors are *qualitative*. 
+
+For example, the [Credit](http://www-bcf.usc.edu/~gareth/ISL/Credit.csv) data set records balance (average credit card debt for a number of individuals) as well as several quantitative predictors: age, cards (number of credit cards), education (years of education), income (in thousands of dollars), limit (credit limit), and rating (credit rating). 
+
+```{r, echo=FALSE}
+credit <- learningAnalytics::credit
+```
+
+```{r}
+credit
+```
+
+Suppose that we wish to investigate differences in credit card balance between males and females, ignoring the other variables for the moment. If a qualitative predictor (also known as a factor) only has two levels, or possible values, then incorporating it into a regression model is very simple. We simply create an indicator or dummy variable that takes on two possible numerical values. For example, based on the gender, we can create a new variable that takes the form
+
+$$x_i = \Bigg\{ \genfrac{}{}{0pt}{}{1 \hspace{.5cm}\text{ if }i\text{th person is male}\hspace{.25cm}}{0 \hspace{.5cm}\text{ if }i\text{th person is female}}  \tag{12}$$
+
+and use this variable as a predictor in the regression equation. This results in the model
+
+$$y_i = \beta_0 + \beta_1x_i + \epsilon_i = \Bigg\{ \genfrac{}{}{0pt}{}{\beta_0 + \beta_1 + \epsilon_i \hspace{.5cm}\text{ if }i\text{th person is male}\hspace{.3cm}}{\beta_0 + \epsilon_i \hspace{1.5cm}\text{ if }i\text{th person is female}}  \tag{13}$$
+
+Now $\beta_0$ can be interpreted as the average credit card balance among males, $\beta_0 + \beta_1$ as the average credit card balance among females, and $\beta_1$ as the average difference in credit card balance between females and males.  We can produce this model in R using the same syntax as we saw earlier:
+
+```{r}
+model4 <- lm(Balance ~ Gender, data = credit)
+```
+
+
+
+
+The results below suggest that females are estimated to carry $529.54 in credit card debt where males carry \$529.54 - \$19.73 = \$509.81.
+
+
+```{r}
+tidy(model4)
+```
+
+The decision to code females as 0 and males as 1 in the above model is arbitrary, and has no effect on the regression fit, but does alter the interpretation of the coefficients.  If we want to change the reference variable (the variable coded as 0) we can change the factor levels. 
+
+```{r}
+credit$Gender <- factor(credit$Gender, levels = c("Male", "Female"))
+
+lm(Balance ~ Gender, data = credit) %>%
+  tidy()
+```
+
+A similar process ensues for qualitative predictor categories with more than two levels.  For instance, if we want to assess the impact that ethnicity has on credit balance we can run the following model.  Ethnicity has three levels: *African American, Asian, Caucasian*. We interpret the coefficients much the same way.  In this case we see that the estimated balance for the baseline, African American, is \$531.00. It is estimated that the Asian category will have \$18.69 less debt than the African American category, and that the Caucasian category will have \$12.50 less debt than the African American category. However, the p-values associated with the coefficient estimates for the two dummy variables are very large (Asian - 0.77 & Caucasian - .83), suggesting no statistical evidence of a real difference in credit card balance between the ethnicities.
+
+```{r}
+lm(Balance ~ Ethnicity, data = credit) %>%
+  tidy
+```
+
+Go ahead and change the reference value within the `Ethnicity` variable to be *Asian*.  Re-run the model and compare the coefficient outputs.
+
+```{r prepare-cat-model, warning=FALSE, message=FALSE}
+credit <- learningAnalytics::credit
+```
+
+```{r cat-model, exercise=TRUE, exercise.setup = "prepare-cat-model"}
+
+```
+
+```{r cat-model-hint-1}
+# first change the factor levels
+credit$Ethnicity <- factor(credit$Ethnicity, levels = c("Asian", "Caucasian", "African American"))
+```
+
+```{r cat-model-hint-2}
+# then re-run the model
+lm(Balance ~ Ethnicity, data = credit) %>%
+  tidy()
+```
+
+The process for assessing model accuracy, both numerically and visually, along with making and measuring predictions can follow the same process as outlined for quantitative predictor variables.
+
+### Transformations
+
+Linear regression models assume a linear relationship between the response and predictors. But in some cases, the true relationship between the response and the predictors may be non-linear.  We can accomodate certain non-linear relationships by transforming variables (i.e. `log(x)`, `sqrt(x)`) or using polynomial regression.  
+
+As an example consider the `Auto` data set.  We can see that a linear trend does not fit the relationship between mpg and horsepower.
+
+```{r plot12, fig.align='center', fig.height=3, fig.width=4}
+auto <- ISLR::Auto
+
+ggplot(auto, aes(horsepower, mpg)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+We can try to address the non-linear relationship with a quadratic relationship, which takes the form of:
+
+$$mpg = \beta_0 + \beta_1 × horsepower + \beta_2 × horsepower^2 + ε \tag{14}$$
+
+We can fit this model in R with the following.  Note that when using transformations that involve `+`, `*`*, `^`, or `-`, you'll need to wrap it in `I()`.
+
+```{r}
+model5 <- lm(mpg ~ horsepower + I(horsepower^2), data = auto)
+
+tidy(model5)
+```
+
+See if you can visualize this model to see if it provides a better relationship.
+
+
+```{r prepare-nonlinear, warning=FALSE, message=FALSE}
+auto <- ISLR::Auto
+```
+
+```{r nonlinear, exercise=TRUE, exercise.setup = "prepare-nonlinear",  fig.align='center', fig.height=3, fig.width=4}
+
+```
+
+```{r nonlinear-solution}
+# one approach to do this is with the following code
+ggplot(auto, aes(horsepower, mpg)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x + I(x^2))
+```
+
+There are numerous types of transformations such as logarithmic (`log()`), exponential (`exp()`), square root (`sqrt()`), Box-Cox (`boxcox()`), among others that can be applied.
+
+### Correlation of Error Terms
+
+An important assumption of the linear regression model is that the error terms, $\epsilon_1, \epsilon_2,\dots,\epsilon_n$, are uncorrelated. Correlated residuals frequently occur in the context of time series data, which consists of observations for which measurements are obtained at discrete points in time. In many cases, observations that are obtained at adjacent time points will have positively correlated errors.  This will result in biased standard errors and incorrect inference of model results.
+
+To illustrate, we'll create a model that uses the number of unemployed to predict personal consumption expenditures (using the `economics` data frame provided by `ggplot2`).  The assumption is that as more people become unemployed personal consumption is likely to reduce.  However, if we look at our model's residuals we see that adjacent residuals tend to take on similar values. In fact, these residuals have a .998 autocorrelation.  This is a clear violation of our assumption. 
+
+```{r plot14, fig.align='center', fig.height=3, fig.width=4}
+df <- economics %>% 
+  mutate(observation = 1:n())
+
+model6 <- lm(pce ~ unemploy, data = df)
+
+df %>%
+  add_residuals(model6) %>%
+  ggplot(aes(observation, resid)) +
+  geom_line()
+```
+
+### Collinearity
+
+*Collinearity* refers to the situation in which two or more predictor variables are closely related to one another. The presence of collinearity can pose problems in the regression context, since it can be difficult to separate out the individual effects of collinear variables on the response. In fact, collinearity can cause predictor variables to appear as statistically insignificant when in fact they are significant.  
+
+For example, the following compares the coefficient estimates obtained from two separate multiple regression models. The first is a regression of credit card balance on age and limit, and the second is a regression of credit card balance on rating and limit. In the first regression, both age and limit are highly significant with very small p- values. In the second, the collinearity between limit and rating has caused the standard error for the limit coefficient estimate to increase by a factor of 12 and the p-value to increase to 0.701. In other words, the importance of the limit variable has been masked due to the presence of collinearity.
+
+```{r}
+model7 <- lm(Balance ~ Age + Limit, data = credit)
+model8 <- lm(Balance ~ Rating + Limit, data = credit)
+
+list(`Model 1` = tidy(model7),
+     `Model 2` = tidy(model8))
+```
+
+A simple way to detect collinearity is to look at the correlation matrix of the predictors. An element of this matrix that is large in absolute value indicates a pair of highly correlated variables, and therefore a collinearity problem in the data. Unfortunately, not all collinearity problems can be detected by inspection of the correlation matrix: it is possible for collinear- ity to exist between three or more variables even if no pair of variables has a particularly high correlation. We call this situation *multicollinearity*.
+
+Instead of inspecting the correlation matrix, a better way to assess multi-collinearity is to compute the *variance inflation factor* (VIF). The VIF is the ratio of the variance of $\hat{\beta}_j$ when fitting the full model divided by the variance of $\hat{\beta}_j$ if fit on its own. The smallest possible value for VIF is 1, which indicates the complete absence of collinearity. Typically in practice there is a small amount of collinearity among the predictors. As a rule of thumb, a VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity. The VIF for each variable can be computed using the formula
+
+$$VIF(\hat{\beta}_j) = \frac{1}{1-R^2_{X_j|X_{-j}}} \tag{14}$$
+
+where $R^2_{X_j|X_{-j}}$ is the $R^2$ from a regression of $X_j$ onto all of the other predictors. We can use the `vif` function from the `car` package to compute the VIF.  As we see below model 7 is near the smallest possible VIF value where model 8 has very large VIF values indicating obvious concerns.
+
+```{r}
+car::vif(model7)
+car::vif(model8)
+```
+
+## Additional Resources
+
+This completes this introductory tutorial to linear regression models. Everything you learned is provided at [http://uc-r.github.io/linear_regression](http://uc-r.github.io/linear_regression) for easy referencing. To go deeper and learn more check out these resources:
+
+- [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/index.html)
+- [The Elements of Statistical Learning](https://statweb.stanford.edu/~tibs/ElemStatLearn/)
+- [Applied Predictive Modeling](http://appliedpredictivemodeling.com/)
+- [R for Data Science](http://r4ds.had.co.nz/)
+- [Practical Regression and Anova using R](https://cran.r-project.org/doc/contrib/Faraway-PRA.pdf)
+
+
+[^other]: See my online tutorials on [resampling methods](http://uc-r.github.io/resampling_methods) and [linear model selection](http://uc-r.github.io/model_selection).
