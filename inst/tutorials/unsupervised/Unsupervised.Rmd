@@ -1,0 +1,1299 @@
+---
+title: "Tutorial 2: Unsupervised Learning"
+output: 
+  learnr::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+
+```{r setup, include=FALSE}
+library(learnr)
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # algorithms & visualization
+
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, collapse=TRUE)
+```
+
+
+## Introduction
+
+Unsupervised learning includes a set of statistical tools to better understand *n* observations that contain a set of features ($X_1, X_2, \dots, X_p$) but do not contain a response variable (*Y*).  Unsupervised learning is often performed as part of an exploratory data analysis. However, the exercise tends to be more subjective, and there is no simple goal for the analysis, such as prediction of a response. Furthermore, it can be hard to assess the quality of results obtained from unsupervised learning methods. The reason for this is simple. If we fit a predictive model using a supervised learning technique (i.e. linear regression), then it is possible to check our work by seeing how well our model predicts the response *Y* on observations not used in fitting the model. However, in unsupervised learning, there is no way to check our work because we don’t know the true answer—the problem is unsupervised.  
+
+However, the importance of unsupervised learning should not be overlooked and techniques for unsupervised learning are of growing importance in a number of fields: 
+
+- A cancer researcher might assay gene expression levels in 100 patients with breast cancer. He or she might then look for subgroups among the breast cancer samples, or among the genes, in order to obtain a better understanding of the disease. 
+- An online shopping site might try to identify groups of shoppers with similar browsing and purchase histories, as well as items that are of particular interest to the shoppers within each group. Then an individual shopper can be preferentially shown the items in which he or she is particularly likely to be interested, based on the purchase histories of similar shoppers. 
+- A search engine might choose what search results to display to a particular individual based on the click histories of other individuals with similar search patterns. 
+
+These statistical learning tasks, and many more, can be performed via unsupervised learning techniques. This tutorial will cover three common unsupervised learning techniques:
+
+1. Principal Components Analysis
+2. K-means Cluster Analysis
+3. Hierarchical Cluster Analysis
+
+For this tutorial I have pre-loaded the following packages for you:
+
+```{r message=FALSE}
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+```
+
+## Data Preparation
+
+To perform these unsupervised techniques in R, generally, the data should be prepared as follows:
+
+1. Rows are observations (individuals) and columns are variables
+2. Any missing value in the data must be removed or estimated.
+3. The data must be standardized (i.e., scaled) to make variables comparable. Recall that, standardization consists of transforming the variables such that they have mean zero and standard deviation one.[^scale] 
+
+Here, we’ll use the built-in R data set `USArrests`, which contains statistics in arrests per 100,000 residents for assault, murder, and rape in each of the 50 US states in 1973. It includes also the percent of the population living in urban areas. Go ahead and get a feel for the data.
+
+
+```{r data, exercise=TRUE}
+USArrests
+```
+
+```{r data-hint-1}
+# summary statistics
+summary(USArrests)
+```
+
+```{r data-hint-2}
+# visual relationships and correlations
+library(GGally)
+ggpairs(USArrests)
+```
+
+```{r data-hint-3}
+# how many missing values are in the data
+sum(is.na(USArrests))
+```
+
+```{r data-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What is the mean murder rate per 100,000 residents across all 50 states?",
+              answer("7.25"),
+              answer("7.79", correct = TRUE),
+              answer("21.23"),
+              answer("10.50"),
+              random_answer_order = TRUE
+              ),
+     question("What is the correlation between the murder and assault rate?",
+              answer("0.564"),
+              answer("0.802", correct = TRUE),
+              answer("0.069"),
+              answer("0.259"),
+              random_answer_order = TRUE
+              ),
+     question("Are there any missing values in the data?",
+              answer("Yes"),
+              answer("No", correct = TRUE),
+              random_answer_order = TRUE
+              )
+     )
+```
+
+To prepare our data for these techniques, let's make sure our data complies with the 3 requirements mentioned above. Our data is already set up in the proper *tidy* fashion where each row is an individual observation and each column is an individual variable. As you saw above, there are no missing values in the data.  However, there were, you could remove them with `na.omit`:
+
+```{r}
+df <- USArrests
+df <- na.omit(df)
+```
+
+As we don’t want our unsupervised techniques to depend on an arbitrary variable unit, we start by scaling/standardizing the data using the R function `scale`:
+
+```{r}
+df <- scale(df)
+head(df)
+```
+
+```{r prepare-data, echo=FALSE}
+df <- USArrests
+df <- scale(df)
+```
+
+```{r data2, exercise=TRUE, exercise.setup = "prepare-data"}
+df
+```
+
+```{r data2-hint-1}
+# What is the mean value for our four variables?
+summary(df)
+```
+
+```{r data2-hint-2}
+# How many standard deviations is Ohio away from the average murder rate?
+df["Ohio", ]
+```
+
+
+```{r data2-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What is the mean value for our four variables?",
+              answer("1"),
+              answer("0", correct = TRUE),
+              answer("0.25"),
+              answer("10.50"),
+              random_answer_order = TRUE,
+              correct = "That's right!  By scaling, we are setting the mean value for each of our variables at 0 and then the value in each row represents the number of standard deviations that observation is away from the center value.",
+              incorrect = "By scaling, we are setting the mean value for each of our variables at 0 and then the value in each row represents the number of standard deviations that observation is away from the center value."
+              ),
+     question("How many standard deviations is Ohio away from the average murder rate?",
+              answer("0.56"),
+              answer("-0.11", correct = TRUE),
+              answer("1.25"),
+              answer("0.65"),
+              random_answer_order = TRUE
+              )
+     )
+```
+
+
+## Principal Components Analysis
+
+Principal components analysis (PCA) reduces the dimensionality of the data, allowing most of the variability to be explained using fewer variables than the original data set. For a large data set with $p$ variables, we could examine pairwise plots of each variable against every other variable, but even for moderate $p$, the number of these plots becomes excessive and not useful.  For example, when $p = 10$ there are $p(p-1)/2 = 45$ scatterplots that could be analyzed!  Clearly, a better method is required to visualize the *n* observations when *p* is large. In particular, we would like to find a low-dimensional representation of the data that captures as much of the information as possible. For instance, if we can obtain a two-dimensional representation of the data that captures most of the information, then we can plot the observations in this low-dimensional space.
+
+PCA provides a tool to do just this. It finds a low-dimensional representation of a data set that contains as much of the variation as possible. The idea is that each of the *n* observations lives in *p*-dimensional space, but not all of these dimensions are equally interesting. PCA seeks a small number of dimensions that are as interesting as possible, where the concept of *interesting* is measured by the amount that the observations vary along each dimension. Each of the dimensions found by PCA is a linear combination of the *p* features and we can take these linear combinations of the measurements and reduce the number of plots necessary for visual analysis while retaining most of the information present in the data. 
+
+<img src="https://www.analyticsvidhya.com/wp-content/uploads/2016/03/2-1-e1458494877196.png" style="display: block; margin: auto; width: 50%; height: 50%" />
+
+### Technical Knowledge
+
+We now explain the manner in which these dimensions, or principal components, are found.
+
+The *first principal component* of a data set $X_1$, $X_2$, ..., $X_p$ is the linear combination of the features
+
+$$Z_{1} = \phi_{11}X_{1} + \phi_{21}X_{2} + ... + \phi_{p1}X_{p} \tag{1}$$ 
+
+that has the largest variance and where $\phi_1$ is the first principal component loading vector, with elements $\phi_{12}, \phi_{22},\dots,\phi_{p2}$. The $\phi$ are *normalized*, which means that $\sum_{j=1}^{p}{\phi_{j1}^{2}} = 1$.  After the first principal component $Z_1$ of the features has been determined, we can find the second principal component $Z_2$. The second principal component is the linear combination of $X_1,\dots , X_p$ that has maximal variance out of all linear combinations that are __*uncorrelated*__ with $Z_1$. The second principal component scores $z_{12}, z_{22}, \dots, z_{n2}$ take the form
+
+$$Z_{2} = \phi_{12}X_{1} + \phi_{22}X_{2} + ... + \phi_{p2}X_{p} \tag{2}$$
+
+This proceeds until all principal components are computed.  The elements $\phi_{11}, ..., \phi_{p1}$ in Eq. 1 are the *loadings* of the first principal component. To calculate these loadings, we must find the $\phi$ vector that maximizes the variance. It can be shown using techniques from linear algebra that the eigenvector corresponding to the largest eigenvalue of the covariance matrix is the set of loadings that explains the greatest proportion of the variability.
+
+```{r pca-question1, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("The objective of PCA is to reduce the dimensionality of our data?",
+              answer("FALSE"),
+              answer("TRUE", correct = TRUE),
+              random_answer_order = TRUE,
+              correct = "That's right!  If you don't remember the math just remember that PCA seeks to find commonality between the current number of variables and portray these in a few key components.",
+              incorrect = "If you don't remember the math just remember that PCA seeks to find commonality between the current number of variables and portray these in a few key components."
+              )
+)
+```
+
+### Performing PCA in R
+
+R has several built-in functions (along with numerous add-on packages) that simplifies performing PCA.  One of these built-in functions is `prcomp`.  With `prcomp` we can perform PCA calculations quickly.  The output from `prcomp` contains a number of useful quantities that we'll cover shortly.
+
+```{r}
+pca_result <- prcomp(df, scale = FALSE)
+names(pca_result)
+```
+
+By default, the `prcomp` function centers the variables to have mean zero. By using the argument `scale = TRUE`, we scale the variables to have standard deviation one. Go ahead and execute `prcomp(USArrests, scale = TRUE)` and compare the output to `prcomp(df, scale = FALSE)`.  Notice that they are the same outputs. Thus, this just means that we can apply the `prcomp` function to unscaled data and it will scale our data for us.
+
+```{r pca1, exercise=TRUE, exercise.setup = "prepare-data"}
+
+```
+
+```{r pca1-hint-1}
+# prcomp by scaling original data 
+prcomp(USArrests, scale = TRUE)
+
+# prcomp using pre-scaled data 
+prcomp(df, scale = FALSE)
+```
+
+The *center* and *scale* components of our `prcomp` output correspond to the means and standard deviations of the variables that were used for scaling prior to implementing PCA. Thus, if we use `prcomp` on unscaled data it shows us that the average murder rate per 100,000 population across all 50 states is 7.788 and the standard deviation is 4.36.
+
+```{r}
+pca_result <- prcomp(USArrests, scale = TRUE)
+
+# means
+pca_result$center
+
+# standard deviations
+pca_result$scale
+```
+
+```{r pca-question2, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What is the average percent of the population living in urban areas across all 50 states?",
+              answer("21.2%"),
+              answer("65.5%", correct = TRUE),
+              answer("14.47%"),
+              answer("9.37%"),
+              random_answer_order = TRUE
+              ),
+     question("What is the standard deviation for the percent of the population living in urban areas across all 50 states?",
+              answer("21.2%"),
+              answer("65.5%"),
+              answer("14.47%", correct = TRUE),
+              answer("9.37%"),
+              random_answer_order = TRUE
+              )
+)
+```
+
+The *rotation* matrix provides the principal component loadings.  First, we see that there are four distinct principal components for our data.  This is to be expected because you can have the same number of components as you have variables.  However, shortly I'll show you how to understand how much each component explains our data.
+
+As for the principal component loadings - remember, the loadings represent $\phi_{12}, \phi_{22},\dots,\phi_{p2}$ in equation 1 above.  Thus, these loadings represent coefficients in which it illustrates each variables __*influence*__ on the principal component.  By default, loadings (aka eigenvectors) in R point in the *negative* direction. For this example, we’d prefer them to point in the positive direction because it leads to more logical insights. To use the positive-pointing vector, we multiply the default loadings by -1.
+
+```{r}
+# convert loadings to positive
+pca_result$rotation <- -pca_result$rotation
+```
+
+From the results below we can infer the the first principal component (PC1) roughly corresponds to an overall rate of serious crimes since *Murder, Assault,* and *Rape* have the largest values. The second component (PC2) is affected by *UrbanPop* more than the other three variables, so it roughly corresponds to the level of urbanization of the state, with some opposite, smaller influence by *murder* rate. 
+
+```{r}
+pca_result$rotation
+```
+
+We can visualize these influences (aka contributions) that variables have on the principal components with `fviz_contrib`.  Here we use `choice = "var"` to plot the variable contributions (% of total) to the principal components and `axes = 1` to plot the contributions for PC1.  Changing `axes = 2` will plot the contributions for PC2. 
+
+```{r, fig.align='center'}
+fviz_contrib(pca_result, choice = "var", axes = 1)
+```
+
+```{r contribution-plot, exercise=TRUE}
+pca_result <- prcomp(USArrests, scale = TRUE)
+pca_result$rotation <- -pca_result$rotation
+```
+
+```{r, contribution-plot-hint-1}
+# Which variable has the largest impact on principal component 3?
+pca_result$rotation[, "PC3"]
+fviz_contrib(pca_result, choice = "var", axes = 3)
+```
+
+```{r, contribution-plot-hint-2}
+# Which variable has the largest impact on principal component 4?
+pca_result$rotation[, "PC4"]
+fviz_contrib(pca_result, choice = "var", axes = 4)
+```
+
+```{r pca-question3, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Which variable has the largest impact on principal component 3?",
+              answer("Murder"),
+              answer("Rape", correct = TRUE),
+              answer("UrbanPop"),
+              answer("Assault"),
+              random_answer_order = TRUE,
+              correct = "That's right! Rape has a large negative influence (-0.818) on PC3, which represents over 60% of the total contribution compared to the other variables.",
+              incorrect = "Rape has a large negative influence (-0.818) on PC3, which represents over 60% of the total contribution compared to the other variables."
+              ),
+     question("Which variable has the largest impact on principal component 4?",
+              answer("Murder"),
+              answer("Rape"),
+              answer("UrbanPop"),
+              answer("Assault", correct = TRUE),
+              random_answer_order = TRUE,
+              correct = "That's right! Assault has a large positive influence (0.74) on PC4, which represents over 50% of the total contribution compared to the other variables.",
+              incorrect = "Assault has a large positive influence (0.74) on PC4, which represents over 50% of the total contribution compared to the other variables."
+              )
+)
+```
+
+We can also obtain the principal components *scores* from our results as these are stored in the *x* list item of our results. However, we also want to make a sign adjustment to our scores to point them in the positive direction. 
+
+```{r}
+pca_result$x <- -pca_result$x
+head(pca_result$x)
+```
+
+The principal components *scores* simply places a standardized score for each observation for each principal component.  Thus, above we see that Alabama has a score of 0.976 for PC1. This just states that based on Alabama's values for *Murder*, *Assault*, *Rape*, and *UrbanPop*, Alabama is about 1 standard deviation above the average value for PC1 across all states.  Since PC1 appears to represent *serious crimes* it appears that Alabama has about 1 standard deviation more than the average amount of *serious crimes* across all 50 states.
+
+We can also visualize the contribution of each state on a particular PC with `fviz_contrib` by changing `choice = "ind"`.  This basically takes the absoluate values of the *scores* and plots the percent of total *scores* for each state.  So this doesn't show you if the state had a positive or negative influence on the PC but just shows if the state's score is of large magnitude (i.e. Florida, North Dakota, Nevada) or of small magnitude (i.e. Delaware, Oregon, Virginia).
+
+```{r, fig.align='center', fig.width=10}
+fviz_contrib(pca_result, choice = "ind", axes = 1)
+```
+
+
+```{r pc_scores, exercise=TRUE}
+pca_result <- prcomp(USArrests, scale = TRUE)
+pca_result$x <- -pca_result$x
+```
+
+```{r pc_scores-hint-1}
+# Get scores for Ohio
+pca_result$x["Ohio",]
+```
+
+```{r pc_scores-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("For PC1, is Ohio above or below the norm?",
+              answer("Below", correct = TRUE),
+              answer("Above"),
+              random_answer_order = TRUE,
+              correct = "That's right! Ohio has a principal component score of -0.22 for PC1 suggesting that it is 0.22 standard deviations below the average for this principal component.",
+              incorrect = "Ohio has a principal component score of -0.22 for PC1 suggesting that it is 0.22 standard deviations below the average for this principal component."
+              ),
+     question("Ohio has the largest score for which principal component?",
+              answer("PC1"),
+              answer("PC3"),
+              answer("PC4"),
+              answer("PC2", correct = TRUE),
+              random_answer_order = TRUE,
+              correct = "That's right! Ohio' score for PC2 is 0.73.",
+              incorrect = "Ohio' score for PC2 is 0.73."
+              )
+)
+```
+
+### Selecting the Number of Principal Components
+
+So far we have computed principal component attributes and gained a little understanding of what the results initially tell us.  However, a primary goal is to use PCA for data reduction.  In essence, we want to come out of PCA with less components than variables and with these components  telling us about the majority of the variation in our data.  But how do we decide how many principal components to keep?
+
+The *proportion of variance explained* (PVE) provides us a technical way to identify the optimal number of principal components to keep. Mathematically, the PVE for the *m*th principal component is calculated using the equation:
+
+$$PVE = \frac{{\sum_{i=1}^{n}(\sum_{j=1}^{p}{\phi_{jm}x_{ij}})^{2}}}{\sum_{j=1}^{p}\sum_{i=1}^{n}{x_{ij}^{2}}} \tag{3}$$
+
+It can be shown that the PVE of the *m*th principal component can be more simply calculated by taking the *m*th eigenvalue and dividing it by the number of principal components, $p$. We can create a vector of PVEs for each principal component:
+
+```{r}
+# compute the variance of each principal component
+VE <- pca_result$sdev^2
+
+# compuate the PVE of each principal component
+PVE <- VE / sum(VE)
+
+round(PVE, 2)
+```
+
+The first principal component in our example therefore explains `r round(100*PVE[1], 0)`% of the variability, and the second principal component explains `r round(100*PVE[2], 0)`%. Together, the first two principal components explain `r round(100*sum(PVE[1:2])/sum(PVE), 0)`% of the variability.
+
+We can visualize this using what's called a *scree plot*.
+
+```{r, fig.align='center'}
+fviz_screeplot(pca_result)
+```
+
+So how many principal components should we use?  The frank answer is that there is no robust method for determining how many components to use. As the number of observations, the number of variables, and the application vary, a different level of accuracy and variable reduction are desirable. However, because the point of PCA is to significantly reduce the number of variables, we want to use the smallest number of principal components possible to explain *most* of the variability.
+
+The most common technique for determining how many principal components to keep is eyeballing the *scree plot* and look for the "elbow point", where the PVE significantly drops off.
+
+In our example, because we only have 4 variables to begin with, reduction to 2 variables while still explaining `r round(100*sum(PVE[1:2])/sum(PVE), 0)`% of the variability is a good improvement. Thus, in this case I would say two components is sufficient.
+
+### Putting it All Together
+
+So what does all this mean?  Well, 87% of the variation in our data can be captured in two components:
+
+1. PC1 (x-axis) is mainly driven *Rape, Assault,* and *Murder* suggesting captures serious crimes
+2. PC2 (y-axis) is mainly driven by *UrbanPop* suggesting it captures urbanization
+
+This is illustrated in the following graphic. Furthermore, we use `alpha.var = "contrib"` to illustrate the influence each variable has on the principal components and we see that *Rape* has much less influence than the other three variables.
+
+```{r, fig.align='center'}
+fviz_pca_var(pca_result, alpha.var = "contrib")
+```
+
+Furthermore, we can see where each state aligns along these components.  We see that states such as California, Florida, and Nevada have high rates of serious crimes, while states such as North Dakota and Vermont have far lower rates. The second component (y-axis) is roughly explained as *urbanization*, which implies that states such as Hawaii and California are highly urbanized, while Mississippi and the Carolinas are far less so. A state close to the origin, such as Indiana or Virginia, is close to average in both categories. 
+
+```{r, fig.align='center', fig.width=7, fig.height=7}
+fviz_pca_ind(pca_result)
+```
+
+```{r biplot-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Based on the above plot, Mississippi has...",
+              answer("High serious crime and high urbanization"),
+              answer("Low serious crime and high urbanization"),
+              answer("High serious crime and low urbanization"),
+              answer("Moderate serious crime and low urbanization", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("Based on the above plot, Ohio has...",
+              answer("Moderate serious crime and low urbanization"),
+              answer("Low serious crime and high urbanization"),
+              answer("Low serious crime and low urbanization"),
+              answer("Near average serious crime and moderate urbanization", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+### Summary
+
+So there you have it. We've used PCA to reduce multiple variables regarding state attributes down to two principal components - *serious crimes* and *urbanization*.  Through this process you were exposed to:
+
+- Using `prcomp` to compute PCA
+- Understanding the outputs that `prcomp` provides
+- Identifying how to assess the number the principal components to keep with PVE
+- Illustrating the results to see how each variable influences the components and how each observation aligns to the components
+
+Next, we'll look at using clustering approaches to find commonality among our observations.
+
+## K-means Cluster Analysis
+
+Clustering is a broad set of techniques for finding subgroups of observations within a data set. When we cluster observations, we want observations in the same group to be similar and observations in different groups to be dissimilar. Clustering allows us to identify which observations are alike, and potentially categorize them therein. K-means clustering is the simplest and the most commonly used clustering method for splitting a dataset into a set of k groups.
+
+<img src="http://grigory.us/blog/pics/kmeans.png" style="display: block; margin: auto;" />
+
+### Clustering Distance Measures {#distance}
+
+The classification of observations into groups requires some methods for computing the distance or the (dis)similarity between each pair of observations. The result of this computation is known as a dissimilarity or distance matrix. 
+
+There are many methods to calculate this distance information; the choice of distance measures is a critical step in clustering. It defines how the similarity of two elements (x, y) is calculated and it will influence the shape of the clusters.
+
+The classical methods for distance measures are *Euclidean* and *Manhattan distances*, which are defined as follow:
+
+__Euclidean distance:__
+
+$$ d_{euc}(x,y) = \sqrt{\sum^n_{i=1}(x_i - y_i)^2} \tag{1}$$
+
+__Manhattan distance:__
+
+$$ d_{man}(x,y) = \sum^n_{i=1}|(x_i - y_i)| \tag{2}$$
+
+Where, *x* and *y* are two vectors of length *n*.
+
+Other dissimilarity measures exist such as correlation-based distances, which is widely used for gene expression data analyses. Correlation-based distance is defined by subtracting the correlation coefficient from 1. Different types of correlation methods can be used such as:
+
+__Pearson correlation distance:__
+
+$$d_{cor}(x, y) = 1 - \frac{\sum^n_{i=1}(x_i-\bar x)(y_i - \bar y)}{\sqrt{\sum^n_{i=1}(x_i-\bar x)^2\sum^n_{i=1}(y_i - \bar y)^2}} \tag{3}$$
+
+__Spearman correlation distance:__
+
+The spearman correlation method computes the correlation between the rank of *x* and the rank of *y* variables.
+
+$$d_{spear}(x, y) = 1 - \frac{\sum^n_{i=1}(x^\prime_i-\bar x^\prime)(y^\prime_i - \bar y^\prime)}{\sqrt{\sum^n_{i=1}(x^\prime_i-\bar x^\prime)^2\sum^n_{i=1}(y^\prime_i - \bar y^\prime)^2}} \tag{4}$$
+
+Where $x^\prime_i = rank(x_i)$ and $y^\prime_i = rank(y_i)$.
+
+__Kendall correlation distance:__
+
+Kendall correlation method measures the correspondence between the ranking of *x* and *y* variables. The total number of possible pairings of *x* with *y* observations is *n(n − 1)/2*, where *n* is the size of *x* and *y*. Begin by ordering the pairs by the *x* values. If *x* and *y* are correlated, then they would have the same relative rank orders. Now,
+for each $y_i$, count the number of $y_j > y_i$ (concordant pairs (c)) and the number of $y_j < y_i$ (discordant pairs (d)).
+
+Kendall correlation distance is defined as follow:
+
+$$d_{kend}(x,y) = 1 - \frac{n_c - n_d}{\frac{1}{2}n(n - 1)} \tag{5}$$
+
+The choice of distance measures is very important, as it has a strong influence on the clustering results. For most common clustering software, the default distance measure is the Euclidean distance.  However, depending on the type of the data and the research questions, other dissimilarity measures might be preferred and you should be aware of the options.
+
+```{r dist-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("The most common distance measure used is...",
+              answer("Minkowski distance"),
+              answer("Pearson correlation"),
+              answer("Manhattan distance"),
+              answer("Euclidean distance", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+Within R it is simple to compute and visualize the distance matrix using the functions `get_dist` and `fviz_dist` from the `factoextra` R package.  This starts to illustrate which states have large dissimilarities (red) versus those that appear to be fairly similar (teal).
+
+- `get_dist`: for computing a distance matrix between the rows of a data matrix. The default distance computed is the Euclidean; however, `get_dist` also supports distanced described in equations 2-5 above plus others.
+- `fviz_dist`: for visualizing a distance matrix
+
+```{r, fig.align='center', fig.width=8.5, fig.height=7}
+# we continue using our scaled df data set
+distance <- get_dist(df)
+fviz_dist(distance, 
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+Use `method = "pearson"` in `get_dist(df)` and see how the distance matrix visualization changes.
+
+```{r prepare-data2, echo=FALSE}
+df <- USArrests
+df <- scale(df)
+```
+
+```{r, dist, exercise=TRUE, exercise.setup = "prepare-data2", fig.align='center', fig.width=8.5, fig.height=7}
+distance <- get_dist(df)
+```
+
+```{r, dist-hint-1}
+distance <- get_dist(df, method = "pearson")
+fviz_dist(distance,
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+### Defining Clusters
+
+The distance measures discussed above measure the distance *between* two observations.  However, we need a measurement to decide what cluster each observation falls into. The basic idea behind k-means clustering consists of defining clusters so that the total intra-cluster variation (known as *total within-cluster variation*) is minimized. There are several k-means algorithms available. The standard algorithm is the Hartigan-Wong algorithm (1979), which defines the total within-cluster variation as the sum of squared distances Euclidean distances between items and the corresponding centroid:
+
+$$W(C_k) = \sum_{x_i \in C_k}(x_i - \mu_k)^2 \tag{6}$$
+
+where:
+
+- $x_i$ is a data point belonging to the cluster $C_k$
+- $\mu_k$ is the mean value of the points assigned to the cluster $C_k$
+
+Each observation ($x_i$) is assigned to a given cluster such that the sum of squares (SS) distance of the observation to their assigned cluster centers ($\mu_k$) is minimized.
+
+We define the total within-cluster variation as follows:
+
+$$tot.withiness = \sum^k_{k=1}W(C_k) = \sum^k_{k=1}\sum_{x_i \in C_k}(x_i - \mu_k)^2 \tag{7} $$
+
+The *total within-cluster sum of square* measures the compactness (i.e goodness) of the clustering and we want it to be as small as possible.
+
+```{r wss-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("In k-means clustering, the most common approach to define clusters is to...",
+              answer("maximize total within-cluster variation"),
+              answer("minimize total within-cluster variation", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+### K-means Algorithm
+
+K-means algorithm can be summarized as follows:
+
+1. The first step when using k-means clustering is to indicate the number of clusters (k) that will be generated in the final solution.  
+2. The algorithm starts by randomly selecting k observations from the data set to serve as the initial centers for the clusters. The selected objects are also known as cluster means or centroids. 
+3. Next, each of the remaining objects are assigned to it’s closest centroid, where closest is defined using the Euclidean distance (Eq. 1) between the object and the cluster mean. This step is called “cluster assignment step”. 
+4. After the assignment step, the algorithm computes the new mean value of each cluster. The term cluster “centroid update” is used to design this step. 
+5. Now that the centers have been recalculated, every observation is checked again to see if it might be closer to a different cluster. All the objects are reassigned again using the updated cluster means.  
+6. The cluster assignment and centroid update steps are iteratively repeated until the cluster assignments stop changing (i.e until *convergence* is achieved) and total within cluster variation has been minimized (Eq. 7). 
+
+
+### Computing k-means clustering in R
+
+We can compute k-means in R with the `kmeans` function. Here will group the data into two clusters (`centers = 2`). The `kmeans` function also has an `nstart` option that attempts multiple initial configurations and reports on the best one. For example, adding `nstart = 25` will generate 25 initial configurations. This approach is often recommended. We set `set.seed(123)` because `kmeans` randomly selects the starting centroid points (step 2 above).
+
+```{r}
+set.seed(123)
+k2 <- kmeans(df, centers = 2, nstart = 25)
+```
+
+If we print the results we'll see that our groupings resulted in 2 cluster sizes of 30 and 20.  We see the cluster centers (means) for the two groups across the four variables (*Murder, Assault, UrbanPop, Rape*). If you look at the cluster means you will see that cluster 1 is centered on mean values that are below average and cluster 2 is centered on mean values above average. We also get the cluster assignment for each observation (i.e. Alabama was assigned to cluster 2, Arkansas was assigned to cluster 1, etc.).  
+
+```{r}
+k2
+```
+
+We can also view our results by using `fviz_cluster`.  This provides a nice illustration of the clusters.  If there are more than two dimensions (variables) `fviz_cluster` will perform principal component analysis (PCA) and plot the data points according to the first two principal components that explain the largest amount of variance.  So this chart shows that our states are being clustered primarily based on having above or below average rates of *serious crimes* (remember from the last tutorial the first principal component - or x axis - represents *serious crimes*).
+
+```{r, fig.align='center'}
+fviz_cluster(k2, data = df)
+```
+
+Alternatively, you can use standard pairwise scatter plots to illustrate the clusters compared to the original variables.
+
+```{r, fig.align='center'}
+df %>%
+  as_tibble() %>%
+  mutate(cluster = k2$cluster,
+         state = row.names(USArrests)) %>%
+  ggplot(aes(UrbanPop, Murder, color = factor(cluster), label = state)) +
+  geom_text()
+```
+
+
+Because the number of clusters (k) must be set before we start the algorithm, it is often advantageous to use several different values of k and examine the differences in the results. Go ahead and perform k-means with 3, 4, and 5 clusters.
+
+```{r, kmeans, exercise=TRUE, exercise.setup = "prepare-data2"}
+set.seed(123)
+
+```
+
+```{r, kmeans-hint-1}
+set.seed(123)
+# k = 3 clusters
+k3 <- kmeans(df, centers = 3, nstart = 25)
+k3
+fviz_cluster(k3, data = df)
+```
+
+```{r, kmeans-hint-2}
+set.seed(123)
+# k = 4 clusters
+k4 <- kmeans(df, centers = 4, nstart = 25)
+k4
+fviz_cluster(k4, data = df)
+```
+
+```{r, kmeans-hint-3}
+set.seed(123)
+# k = 5 clusters
+k5 <- kmeans(df, centers = 5, nstart = 25)
+k5
+fviz_cluster(k5, data = df)
+```
+
+```{r kmeans-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What are the cluster sizes when k = 3?",
+              answer("20, 19, 11"),
+              answer("17, 19, 14"),
+              answer("6, 26, 18"),
+              answer("13, 17, 20", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("When k = 4 what cluster does Ohio fall into?",
+              answer("3"),
+              answer("1"),
+              answer("4"),
+              answer("2", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("When k = 5 what cluster does Ohio fall into?",
+              answer("3"),
+              answer("2"),
+              answer("4"),
+              answer("1"),
+              answer("5", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+Although visually assessing the different k cluster outputs tells us where true dilineations occur (or do not occur such as clusters 4 & 5 in the k = 5 graph) between clusters, it does not tell us what the optimal number of clusters is.
+
+### Determining Optimal Clusters
+
+As you may recall the analyst specifies the number of clusters to use; preferably the analyst would like to use the optimal number of clusters.  To aid the analyst, the following explains the three most popular methods for determining the optimal clusters, which includes: 
+
+1. [Elbow method](#elbow)
+2. [Silhouette method](#silo)
+3. [Gap statistic](#gap)
+
+#### Elbow Method {#elbow}
+
+Recall that, the basic idea behind cluster partitioning methods, such as k-means clustering, is to define clusters such that the total within-cluster variation is minimized:
+
+$$ minimize\Bigg(\sum^k_{k=1}W(C_k)\Bigg) \tag{8}$$
+
+where $C_k$ is the $k^{th}$ cluster and $W(C_k)$ is the within-cluster variation. The total within-cluster sum of square (wss) measures the compactness of the clustering and we want it to be as small as possible.  Thus, we can use the following algorithm to define the optimal clusters:
+
+1. Compute clustering algorithm (e.g., k-means clustering) for different values of *k*. For instance, by varying *k* from 1 to 10 clusters
+2. For each *k*, calculate the total within-cluster sum of square (wss)
+3. Plot the curve of wss according to the number of clusters *k*.
+4. The location of a bend (knee) in the plot is generally considered as an indicator of the appropriate number of clusters.
+
+We can implement this in R with the following code.  The results suggest that 4 is the optimal number of clusters as it appears to be the bend in the knee (or elbow). 
+
+```{r, fig.align='center', fig.width=7, fig.height=4}
+set.seed(123)
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(df, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:15
+
+# extract wss for 2-15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+```
+
+Fortunately, this process to compute the "Elbow method" has been wrapped up in a single function (`fviz_nbclust`):
+
+```{r, fig.align='center', fig.width=7, fig.height=4}
+set.seed(123)
+
+fviz_nbclust(df, kmeans, method = "wss")
+```
+
+#### Average Silhouette Method {#silo}
+
+In short, the average silhouette approach measures the quality of a clustering. That is, it determines how well each object lies within its cluster. A high average silhouette width indicates a good clustering. The average silhouette method computes the average silhouette of observations for different values of *k*. The optimal number of clusters *k* is the one that maximizes the average silhouette over a range of possible values for *k*.[^kauf]  
+
+We can use the `silhouette` function in the cluster package to compuate the average silhouette width. The following code computes this approach for 1-15 clusters.  The results show that 2 clusters maximize the average silhouette values with 4 clusters coming in as second optimal number of clusters.
+
+```{r, fig.align='center'}
+# function to compute average silhouette for k clusters
+avg_sil <- function(k) {
+  km.res <- kmeans(df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(df))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:15
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+```
+
+Similar to the elbow method, this process to compute the "average silhoutte method" has been wrapped up in a single function (`fviz_nbclust`):
+
+```{r, fig.align='center'}
+fviz_nbclust(df, kmeans, method = "silhouette")
+```
+
+#### Gap Statistic Method {#gap}
+
+The gap statistic has been published by [R. Tibshirani, G. Walther, and T. Hastie (Standford University, 2001)](http://web.stanford.edu/~hastie/Papers/gap.pdf). The approach can be applied to any clustering method (i.e. K-means clustering, hierarchical clustering).  The gap statistic compares the total intracluster variation for different values of *k* with their expected values under null reference distribution of the data (i.e. a distribution with no obvious clustering).  The reference dataset is generated using Monte Carlo simulations of the sampling process. That is, for each variable ($x_i$) in the data set we compute its range $[min(x_i), max(x_j)]$ and generate values for the n points uniformly from the interval min to max.
+
+For the observed data and the the reference data, the total intracluster variation is computed using different values of *k*. The *gap statistic* for a given *k* is defined as follow:
+
+$$ Gap_n(k) = E^*_n{log(W_k)} - log(W_k) \tag{9}$$
+
+Where $E^*_n$ denotes the expectation under a sample size *n* from the reference distribution. $E^*_n$ is defined via bootstrapping (B) by generating B copies of the reference datasets and, by computing the average $log(W^*_k)$.  The gap statistic measures the deviation of the observed $W_k$ value from its expected value under the null hypothesis.  The estimate of the optimal clusters ($\hat k$) will be the value that maximizes $Gap_n(k)$. This means that the clustering structure is far away from the uniform distribution of points.
+
+In short, the algorithm involves the following steps:
+
+1. Cluster the observed data, varying the number of clusters from $k=1, \dots, k_{max}$, and compute the corresponding $W_k$.
+2. Generate B reference data sets and cluster each of them with varying number of clusters $k=1, \dots, k_{max}$. Compute the estimated gap statistics presented in eq. 9.
+3. Let $\bar w = (1/B) \sum_b log(W^*_{kb})$, compute the standard deviation $sd(k) = \sqrt{(1/b)\sum_b(log(W^*_{kb})- \bar w)^2}$ and define $s_k = sd_k \times \sqrt{1 + 1/B}$.
+4. Choose the number of clusters as the smallest k such that $Gap(k) \geq Gap(k+1) - s_{k+1}$.
+
+To compute the gap statistic method we can use the `clusGap` function which provides the gap statistic and standard error for an output.
+
+```{r}
+# compute gap statistic
+set.seed(123)
+gap_stat <- clusGap(df, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+# Print the result
+print(gap_stat, method = "firstmax")
+```
+
+We can visualize the results with `fviz_gap_stat` which suggests four clusters as the optimal number of clusters.
+
+```{r, fig.align='center'}
+fviz_gap_stat(gap_stat)
+```
+
+In addition to these commonly used approaches, the `NbClust` package, published by [Charrad et al., 2014](http://www.jstatsoft.org/v61/i06/paper), provides 30 indices for determining the relevant number of clusters and proposes to users the best clustering scheme from the different results obtained by varying all combinations of number of clusters, distance measures, and clustering methods.
+
+```{r optimal-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Which method measures the quality of a clustering?",
+              answer("Elbow method"),
+              answer("Average silhouette method", correct = TRUE),
+              answer("Gap statistic method"),
+              random_answer_order = TRUE
+     ),
+     question("Which method compares the total intracluster variation for different values of *k* with their expected values under null reference distribution of the data (i.e. a distribution with no obvious clustering)?",
+              answer("Elbow method"),
+              answer("Average silhouette method"),
+              answer("Gap statistic method", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("Which method computes the total within-cluster sum of square for multiple k values and looks for the 'bend in the knee' where these values level off?",
+              answer("Elbow method", correct = TRUE),
+              answer("Average silhouette method"),
+              answer("Gap statistic method"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+
+### Extracting Results
+
+With most of these approaches suggesting 4 as the number of optimal clusters, let's perform the final analysis and extract the results using 4 clusters. First, compute k-means on our data with $k=4$.
+
+```{r, final, exercise=TRUE, exercise.setup = "prepare-data2"}
+set.seed(123)
+
+```
+
+```{r, final-hint-1}
+# Compute k-means clustering with k = 4
+set.seed(123)
+final <- kmeans(df, 4, nstart = 25)
+```
+
+```{r final-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What are the sizes of each cluster?",
+              answer("12, 17, 14, 7"),
+              answer("9, 10, 16, 9"),
+              answer("13, 16, 13, 8", correct = TRUE),
+              answer("10, 13, 13, 8"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+Go ahead and visualize the results using `fviz_cluster`:
+
+```{r prepare-data3, echo=FALSE}
+df <- USArrests
+df <- scale(df)
+set.seed(123)
+final <- kmeans(df, 4, nstart = 25)
+```
+
+```{r, final2, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+
+```
+
+```{r, final2-hint-1}
+fviz_cluster(final, data = df)
+```
+
+```{r final2-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Which cluster does California fall into?",
+              answer("1"),
+              answer("2"),
+              answer("3", correct = TRUE),
+              answer("4"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+See if you can extract the clusters and add to our initial `USArrests` data to do some descriptive statistics at the cluster level:
+
+```{r, final3, exercise=TRUE, exercise.setup = "prepare-data3"}
+
+
+```
+
+```{r, final3-hint-1}
+USArrests %>%
+  mutate(Cluster = final$cluster) %>%
+  group_by(Cluster) %>%
+  summarise_all("mean")
+```
+
+```{r final3-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What is the mean percent urban population for cluster 4?",
+              answer("52.08%"),
+              answer("21.41%"),
+              answer("53.75%", correct = TRUE),
+              answer("13.94%"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+### Additional Comments
+
+K-means clustering is a very simple and fast algorithm. Furthermore, it can efficiently deal with very large data sets.  However, there are some weaknesses of the k-means approach.
+
+One potential disadvantage of K-means clustering is that it requires us to pre-specify the number of clusters. Hierarchical clustering is an alternative approach which does not require that we commit to a particular choice of clusters. Hierarchical clustering has an added advantage over K-means clustering in that it results in an attractive tree-based representation of the observations, called a dendrogram. Next, I will illustrate the hierarchical clustering approach.
+
+## Hierarchical Cluster Analysis
+
+Hierarchical clustering is an alternative approach to k-means clustering for identifying groups in the dataset. It does not require us to pre-specify the number of clusters to be generated as is required by the k-means approach. Furthermore, hierarchical clustering has an added advantage over K-means clustering in that it results in an attractive tree-based representation of the observations, called a dendrogram.
+
+
+<center>
+<img src="images/hc.png" style="display: block; margin: auto; width: 75%; height: 75%" />
+</center>
+
+### Hierarchical Clustering Algorithms
+
+Hierarchical clustering can be divided into two main types: *agglomerative* and *divisive*.
+
+1. __Agglomerative clustering:__ It’s also known as AGNES (Agglomerative Nesting). It works in a bottom-up manner. That is, each object is initially considered as a single-element cluster (leaf). At each step of the algorithm, the two clusters that are the most similar are combined into a new bigger cluster (nodes). This procedure is iterated until all points are member of just one single big cluster (root) (see figure below). The result is a tree which can be plotted as a dendrogram.
+2. __Divisive hierarchical clustering:__ It’s also known as DIANA (Divise Analysis) and it works in a top-down manner. The algorithm is an inverse order of AGNES. It begins with the root, in which all objects are included in a single cluster. At each step of iteration, the most heterogeneous cluster is divided into two. The process is iterated until all objects are in their own cluster (see figure below).
+
+*Note that agglomerative clustering is good at identifying small clusters. Divisive hierarchical clustering is good at identifying large clusters.*
+
+<center>
+<img src="http://www.sthda.com/sthda/RDoc/images/hierarchical-clustering-agnes-diana.png" style="display: block; margin: auto;" />
+</center>
+
+```{r hc-algorithms-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Agglomerative clustering works in a...",
+              answer("Top-down manner"),
+              answer("Bottom-up manner", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("Divisive clustering works in a...",
+              answer("Top-down manner", correct = TRUE),
+              answer("Bottom-up manner"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+As we learned in the last section, we measure the (dis)similarity of observations using distance measures (i.e. Euclidean distance, Manhattan distance, etc.) In R, the Euclidean distance is used by default to measure the dissimilarity between each pair of observations. 
+
+However, a bigger question is: *How do we measure the dissimilarity between two clusters of observations?* A number of different cluster agglomeration methods (i.e, linkage methods) have been developed to answer to this question. The most common types methods are:
+
+- __Maximum or complete linkage clustering:__ It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the largest value (i.e., maximum value) of these dissimilarities as the distance between the two clusters. It tends to produce more compact clusters.
+- __Minimum or single linkage clustering:__ It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the smallest of these dissimilarities as a linkage criterion. It tends to produce long, “loose” clusters.
+- __Mean or average linkage clustering:__ It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the average of these dissimilarities as the distance between the two clusters.
+- __Centroid linkage clustering:__ It computes the dissimilarity between the centroid for cluster 1 (a mean vector of length p variables) and the centroid for cluster 2.
+- __Ward’s minimum variance method:__ It minimizes the total within-cluster variance. At each step the pair of clusters with minimum between-cluster distance are merged.
+
+We can see the visual differences these approaches produce in the following dendrograms:
+
+<center>
+<img src="images/dends.png" style="display: block; margin: auto; width: 75%; height: 75%" />
+</center>
+
+The important thing to remember is there are multiple ways to define clusters when performing hierarchical cluster analysis.  
+
+```{r hc-algorithms-question2, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Do results differ depending on the method used to define clusters?",
+              answer("No"),
+              answer("Yes", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+### Hierarchical Clustering with R 
+
+There are different functions available in R for computing hierarchical clustering. The commonly used functions are:
+
+- `hclust` [in stats package] and `agnes` [in cluster package] for agglomerative hierarchical clustering (HC)
+- `diana` [in cluster package] for divisive HC
+
+### Agglomerative Hierarchical Clustering
+
+We can perform agglomerative HC with `hclust`.  First we compute the dissimilarity values with `dist` and then feed these values into `hclust` and specify the agglomeration method to be used (i.e. "complete", "average", "single", "ward.D").  We can then plot the dendrogram.
+
+```{r, fig.align='center', fig.width=8}
+# for reproducibility
+set.seed(123)
+
+# Dissimilarity matrix
+d <- dist(df, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+```
+
+Alternatively, we can use the `agnes` function.  This function behaves similar to `hclust`; however, with the `agnes` function you can also get the agglomerative coefficient, which measures the amount of clustering structure found (values closer to 1 suggest strong clustering structure).
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+# for reproducibility
+set.seed(123)
+
+# Compute maximum or "complete linkage clustering with agnes
+hc2 <- agnes(df, method = "complete")
+
+# Agglomerative coefficient
+hc2$ac
+
+# plot dendrogram with the agglomerative coefficient
+plot(hc2, which = 2, cex = 0.6, hang = -1)
+```
+
+Perform hierarchical clustering with the `agnes` function using the other methods (i.e. "complete", "average", "single", "ward").
+
+```{r, hc-agnes, exercise=TRUE, exercise.setup = "prepare-data3", fig.align='center', fig.width=8, fig.height=6}
+# for reproducibility
+set.seed(123)
+df
+
+```
+
+```{r, hc-agnes-hint-1}
+# Average linkage clustering
+hc_avg <- agnes(df, method = "average")
+hc_avg$ac
+plot(hc_avg, which = 2)
+```
+
+```{r, hc-agnes-hint-2}
+# Minimum or "single" linkage clustering
+hc_single <- agnes(df, method = "single")
+hc_single$ac
+plot(hc_single, which = 2)
+```
+
+```{r, hc-agnes-hint-3}
+# Ward's linkage clustering
+hc_ward <- agnes(df, method = "ward")
+hc_ward$ac
+plot(hc_ward, which = 2)
+```
+
+
+```{r hc-agnes-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Which clustering method produces the largest agglomerative coefficient?",
+              answer("average"),
+              answer("single"),
+              answer("complete"),
+              answer("ward", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+
+We can be a little more efficient by using an alternative approach to identify the hierarchical clustering methods that can create stronger clustering structures.  Here we see that Ward's method identifies the strongest clustering structure of the four methods assessed.
+
+```{r}
+# for reproducibility
+set.seed(123)
+
+# methods to assess
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# function to compute coefficient
+ac <- function(x) {
+  agnes(df, method = x)$ac
+}
+
+map_dbl(m, ac)
+```
+
+### Divisive Hierarchical Clustering
+
+The R function `diana` provided by the cluster package allows us to perform divisive hierarchical clustering. `diana` works similar to `agnes`; however, there is no method to provide.
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+# for reproducibility
+set.seed(123)
+
+# compute divisive hierarchical clustering
+hc4 <- diana(df)
+
+# Divise coefficient; amount of clustering structure found
+hc4$dc
+
+# plot dendrogram
+plot(hc4, which = 2, main = "Dendrogram of diana", cex = 0.6, hang = -1)
+```
+
+### Working with Dendrograms
+
+The nice thing about hierarchical clustering is that is provides a complete dendrogram illustrating the relationships between groupings in our data.  In the dendrogram displayed below, each leaf corresponds to one observation (aka an individual state). As we move up the tree, observations that are similar to each other are combined into branches, which are themselves fused at a higher height. 
+
+The height of the fusion, provided on the vertical axis, indicates the (dis)similarity between two observations. The higher the height of the fusion, the less similar the observations are.  __*Note that, conclusions about the proximity of two observations can be drawn only based on the height where branches containing those two observations first are fused. We cannot use the proximity of two observations along the horizontal axis as a criteria of their similarity.*__ 
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+# for reproducibility
+set.seed(123)
+
+# Ward's linkage clustering
+hc_ward <- agnes(df, method = "ward")
+plot(hc_ward, main = "Ward's Method", which = 2, cex = 0.6, hang = -1)
+```
+
+```{r hc-dendros-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Based on the above dendrogram, which state is most similar to Ohio?",
+              answer("Kansas"),
+              answer("Hawaii"),
+              answer("Pennsylvania", correct = TRUE),
+              answer("Utah"),
+              random_answer_order = TRUE
+     ),
+     question("The height of the lines represents the magnitude of the dissimiliarities between two groups?",
+              answer("False"),
+              answer("True", correct = TRUE),
+              random_answer_order = TRUE
+     )
+)
+```
+
+
+The height of the cut to the dendrogram controls the number of clusters obtained. It plays the same role as the k in k-means clustering. In order to identify sub-groups (i.e. clusters), we can cut the dendrogram with `cutree`:
+
+```{r}
+# for reproducibility
+set.seed(123)
+
+# Ward's method
+hc_ward <- agnes(df, method = "ward")
+
+# convert to hclust object
+hc_ward <- as.hclust(hc_ward)
+
+# cut tree into 4 groups
+sub_grp <- cutree(hc_ward, k = 4)
+
+# number of members in each cluster
+table(sub_grp)
+```
+
+Thus, we can see that when we cut our tree into 4 clusters we have 16, 14, 10, and 10 observations in clusters 1-4 respectively.  We can also use the `cutree` output to add the cluster each observation belongs to to our original data. This would allow us to subset and analyze data at the cluster level.
+
+```{r}
+USArrests %>%
+  mutate(State = row.names(USArrests),
+         cluster = sub_grp) %>%
+  head
+```
+
+It’s also possible to draw the dendrogram with a border around the 4 clusters to help illustrate the groupings. The argument `border` is used to specify the border colors for the rectangles:
+
+```{r, fig.align='center', fig.width=8, fig.height=6}
+plot(hc_ward, cex = 0.6, hang = -1)
+rect.hclust(hc_ward, k = 4, border = 2:5)
+```
+
+Go ahead and cut the `hc_ward` tree into 3 clusters and answer the questions below.
+
+```{r, hc-dendros2, exercise=TRUE, exercise.setup = "prepare-data3", fig.align='center', fig.width=8, fig.height=6}
+set.seed(123)
+hc_ward <- agnes(df, method = "ward")
+hc_ward <- as.hclust(hc_ward)
+
+
+```
+
+```{r, hc-dendros2-hint-1}
+# cut the tree into 3 clusters
+sub_grp <- cutree(hc_ward, k = 3)
+```
+
+```{r, hc-dendros2-hint-2}
+# how many observations fall into each cluster
+table(sub_grp)
+```
+
+```{r, hc-dendros2-hint-3}
+# What cluster does Ohio fall into?
+df_3k <- USArrests %>%
+  mutate(State = row.names(USArrests),
+         Cluster = sub_grp)
+  
+filter(df_3k, State == "Ohio")
+```
+
+```{r, hc-dendros2-hint-4}
+# Which cluster has the highest average murder rate?
+df_3k %>%
+  group_by(Cluster) %>%
+  summarise(avg_murder = mean(Murder))
+```
+
+
+```{r hc-dendros2-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("How many observations fall into the 3 clusters?",
+              answer("19, 19, 12", correct = TRUE),
+              answer("18, 16, 14"),
+              answer("15, 15, 20"),
+              answer("24, 12, 14"),
+              random_answer_order = TRUE
+     ),
+     question("What cluster does Ohio fall into?",
+              answer("3"),
+              answer("1"),
+              answer("2", correct = TRUE),
+              random_answer_order = TRUE
+     ),
+     question("Which cluster has the highest average murder rate?",
+              answer("3"),
+              answer("1", correct = TRUE),
+              answer("2"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+
+### Determining Optimal Clusters 
+
+Although hierarchical clustering provides a great tool to illustrate complete relationships and clusters across all observations, we still desire a way to determine optimal number of clusters as we did with k-means clustering.  And in fact, we can use similar approaches for hierarchical clustering as we did in k-means clustering to determine the optimal number of clusters.
+
+```{r hc-optimal-question, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("What were the three methods you learned about in the k-means tutorial to determine the optimal number of clusters?",
+              answer("Elbow method", correct = TRUE),
+              answer("Average silhouette method", correct = TRUE),
+              answer("Gap statistic method", correct = TRUE),
+              answer("Euclidean distance"),
+              random_answer_order = TRUE
+     )
+)
+```
+
+To perform the elbow method we use the same `fviz_nbclust` function we did in the k-means tutorial; however, we need to change the second to `FUN = hcut`. Here we see the optimal number of clusters is right around 4.
+
+```{r, fig.align='center', fig.height=3, fig.width=6}
+# for reproducibility
+set.seed(123)
+
+# elbow method for identifying optimal number of clusters
+fviz_nbclust(df, FUN = hcut, method = "wss")
+```
+
+Go ahead and identify the optimal number of clusters suggested by the average silhouette and gap statistic methods (Don't worry, I would be impressed if you remembered these! Feel free to peak back at the k-means tutorial.).
+
+```{r prepare-data4, echo=FALSE}
+df <- USArrests
+df <- scale(df)
+```
+
+```{r, hc-optimal, exercise=TRUE, exercise.setup = "prepare-data4", fig.align='center', fig.height=3, fig.width=6}
+set.seed(123)
+
+
+
+```
+
+```{r, hc-optimal-hint-1}
+# average silhouette method for identifying optimal number of clusters
+fviz_nbclust(df, FUN = hcut, method = "silhouette")
+```
+
+```{r, hc-optimal-hint-2}
+# gap statistic method for identifying optimal number of clusters
+gap_stat <- clusGap(df, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+```{r hc-optimal-question2, echo=FALSE}
+quiz(caption = "Knowledge Check",
+     question("Do all three methods converge on a common number of clusters?",
+              answer("No", correct = TRUE),
+              answer("Yes"),
+              random_answer_order = TRUE,
+              correct = "Correct! All three methods suggest a different number of clusters.  This is not uncommon.",
+              incorrect = "All three methods suggest a different number of clusters.  This is not uncommon."
+     )
+)
+```
+
+### Additional Comments
+
+Hierarchical clustering can be a very useful tool for data analysis in the unsupervised setting. However, there are a number of issues that arise in performing hierarchical clustering that we need to be concerned about:
+
+- What dissimilarity measure should be used?
+- What type of linkage should be used?
+- Where should we cut the dendrogram in order to obtain clusters?
+
+Each of these decisions can have a strong impact on the results obtained. In practice, we try several different choices, and look for the one with the most useful or interpretable solution. With these methods, there is no single right answer - any solution that exposes some interesting aspects of the data should be considered.
+
+## Final Thoughts
+
+Unsupervised learning provides several useful tools for enhancing your exploratory data analysis. Today we learned about three approaches:
+
+- Principal Components Analysis
+- K-means Cluster Analysis
+- Hierarchical Cluster Analysis
+
+Each of these approaches allows you to find common features or relationships among your data.  This tutorial scratches the surface of what these approaches can do; however, it at least gets you started in performing, interpreting, and visualizing these analytic tools.  To learn more check out these resources:
+
+- [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/)
+- [Applied Predictive Modeling](http://appliedpredictivemodeling.com/)
+- [Elements of Statistical Learning](https://statweb.stanford.edu/~tibs/ElemStatLearn/)
+- [A Practical Guide to Cluster Analysis in R](https://www.amazon.com/Practical-Guide-Cluster-Analysis-Unsupervised/dp/1542462703/ref=sr_1_1?ie=UTF8&qid=1493169647&sr=8-1&keywords=practical+guide+to+cluster+analysis)
+
+
+[^scale]: It is usually beneficial for each variable to be centered at zero due to the fact that it makes comparing each principal component to the mean or the dissimilarity distances for cluster analysis straightforward.  This also eliminates potential problems with magnitude differences of each variable. However, keep in mind that there may be instances where scaling is not desirable. An example would be if every variable in the data set had the same units and the analyst wished to capture this difference in variance for his or her results. Since *Murder, Assault,* and *Rape* are all measured on occurrences per 100,000 people this may be reasonable depending on how you want to interpret the results.  But since *UrbanPop* is measured as a percentage of total population it wouldn't make sense to compare the variability of *UrbanPop* to *Murder, Assault,* and *Rape*.  The important thing to remember is these unsupervised techniques are influenced by the magnitude of each variable; therefore, *the results obtained when we perform them will also depend on whether the variables have been individually scaled.*
