@@ -16,7 +16,6 @@ Welcome to this set of tutorials focused on providing structured learning approa
 
 This initial tutorial is meant to assess the functionality of your computer setup.
 
-
 ## System Requirements
 
 The following outlines system requirements to make sure these tutorials operate correctly:
@@ -60,5 +59,7 @@ question("Do you love R?",
   incorrect = "Ummmm...why are you here???"
 )
 ```
+
+
 
 
