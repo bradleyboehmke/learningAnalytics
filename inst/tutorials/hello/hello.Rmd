@@ -1,5 +1,5 @@
 ---
-title: "Hello, Tutorial!"
+title: "Hello!"
 author: "Brad Boehmke"
 output: learnr::tutorial
 runtime: shiny_prerendered
@@ -9,8 +9,56 @@ runtime: shiny_prerendered
 library(learnr)
 ```
     
-The following code computes the answer to 1 + 1. Change it so it computes 2 + 2:
+    
+## Welcome
+
+Welcome to this set of tutorials focused on providing structured learning approach. Through these tutorials you will not only learn the fundamental analytic applications, but you will also apply and perform knowledge checks as you progress through the tutorials.  
+
+This initial tutorial is meant to assess the functionality of your computer setup.
+
+
+## System Requirements
+
+The following outlines system requirements to make sure these tutorials operate correctly:
+
+- R v3.4.0 (2017-04-21) or greater
+- RStudio v1.0.143 or greater
+- Internet connection
+- These tutorials depend on the following packages.  These all should have been installed when you downloaded this package; however, you might want to confirm that they all downloaded successfully.
+
+```{r, eval=FALSE}
+pkgs <- c("learnr", "tidyverse", "moments", "outliers", "GGally", "cluster",
+          "factoextra", "ISLR", "car", "caret", "MASS", "ROCR", "gridExtra",
+          "grid", "pscl", "boot", "leaps", "ggplot2movies")
+
+install.packages(pkgs)
+```
+
+
+## Equation Display
+
+Throughout many tutorials you will see mathematical notation.  The equations leverage mathjax and you should see them in equation form (i.e. $Y = \beta_0 + \beta_1X + \epsilon$).  However, if the equation is showing up looking like LaTex code (i.e. Y = \beta_0 + \beta_1X + \epsilon) then your mathjax conversion is not happening correctly.  First, I would ensure you are connected to the internet.  Second, if you are having problems with MathJax rendering using Safari, try a different browser such as Google Chrome.
+
+## Running Code
+
+Throughout these tutorials you will be able to execute code as you progress. The following illustrates the code environment you will have. Go ahead and change the below code so it computes 2 + 2:
     
 ```{r addition, exercise=TRUE}
 1 + 1
 ```
+
+
+## Knowledge Checks
+
+You will also see Knowledge Checks along the way where you will be able to answer questions.  These look like the following:
+
+```{r test, echo=FALSE}
+question("Do you love R?",
+  answer("Yes", correct = TRUE),
+  answer("No"),
+  correct = "Fantastic choice! You automatically get 5 brownie points!",
+  incorrect = "Ummmm...why are you here???"
+)
+```
+
+

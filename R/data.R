@@ -11,3 +11,24 @@
 #' }
 #' @source \url{http://www-bcf.usc.edu/~gareth/ISL}
 "advertising"
+
+#' Credit card balances and demographics
+#'
+#' A dataset containing the balance and several demographic characteristics of credit card holders.
+#'
+#' @format A data frame with 400 rows and 11 variables:
+#' \describe{
+#'   \item{Income}{income, in thousands of US dollars}
+#'   \item{Limit}{credit card limit, in US dollars}
+#'   \item{Rating}{credit rating}
+#'   \item{Cards}{number of cards}
+#'   \item{Age}{age of the customer}
+#'   \item{Education}{highest level of education received}
+#'   \item{Gender}{customer gender}
+#'   \item{Student}{is the customer a student}
+#'   \item{Married}{is the customer married}
+#'   \item{Ethnicity}{ethnicity}
+#'   \item{Balance}{credit card balance carried over, in US dollars}
+#' }
+#' @source \url{http://www-bcf.usc.edu/~gareth/ISL}
+"credit"
