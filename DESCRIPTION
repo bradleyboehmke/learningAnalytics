@@ -26,5 +26,6 @@ Imports: learnr,
     gridExtra,
     pscl,
     boot,
-    leaps
+    leaps,
+    ggplot2movies
 RoxygenNote: 6.0.1
