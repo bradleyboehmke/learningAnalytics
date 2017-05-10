@@ -3,6 +3,8 @@ title: "Tutorial 2: Unsupervised Learning"
 output: 
   learnr::tutorial:
     progressive: true
+    mathjax: local
+    self_contained: false
 runtime: shiny_prerendered
 ---
 
