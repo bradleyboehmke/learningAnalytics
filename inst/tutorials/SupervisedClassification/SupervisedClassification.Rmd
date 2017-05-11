@@ -1,0 +1,1155 @@
+---
+title: "Tutorial 4: Supervised Classification"
+output: 
+  learnr::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+
+```{r setup, include=FALSE}
+# Packages
+library(tidyverse)  # data manipulation and visualization
+library(modelr)     # provides easy pipeline modeling functions
+library(broom)      # helps to tidy up model outputs
+library(learnr)
+library(caret)
+library(MASS)
+
+# Load data 
+(default <- as_tibble(ISLR::Default))
+```
+
+## Classification
+
+Classification problems occur often, perhaps even more so than regression problems. Some examples include:
+
+1. A person arrives at the emergency room with a set of symptoms that could possibly be attributed to one of three medical conditions. Which of the three conditions does the individual have?
+2. An online banking service must be able to determine whether or not a transaction being performed on the site is fraudulent, on the basis of the user’s IP address, past transaction history, and so forth.
+3. On the basis of DNA sequence data for a number of patients with and without a given disease, a biologist would like to figure out which DNA mutations are deleterious (disease-causing) and which are not.
+
+Just as in the regression setting, in the classification setting we have a set of training observations $(x_1, y_1),\dots,(x_n,y_n)$ that we can use to build a __*classifier*__. We want our classifier to perform well not only on the training data, but also on test observations that were not used to train the classifier.
+
+In this tutorial, we will illustrate the concept of classification using the `default` data provided by the `ISLR` package. This is a simulated data set containing information on ten thousand customers such as whether the customer defaulted, is a student, the average balance carried by the customer and the income of the customer. We are interested in predicting whether an individual will default on his or her credit card payment, on the basis of the various predictor variables.
+
+Go ahead and get a feel for this data by checking out some summary statistics.
+
+```{r prepare-data, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+```
+
+```{r data, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data"}
+default
+```
+
+```{r data-hint-1}
+summary(default)
+GGally::ggpairs(default)
+```
+
+
+```{r missing, echo=FALSE}
+question("What is the percentage of customers that have defaulted?",
+  answer("1%"),
+  answer("13%"),
+  answer("3%", correct = TRUE),
+  answer("6%")
+)
+```
+
+
+### Why Not Regression
+
+Linear regression is not appropriate in the case of a qualitative response. Why not? Suppose that we are trying to predict the medical condition of a patient in the emergency room on the basis of her symptoms. In this simplified example, there are three possible diagnoses: *stroke*, *drug overdose*, and *epileptic seizure*. We could consider encoding these values as a quantitative response variable, *Y* , as follows:
+
+$$ 
+Y = \begin{cases}
+      1, & \text{if stroke;} \\
+      2, & \text{if drug overdose;} \\
+      3, & \text{if epileptic seizure.}
+    \end{cases}  
+$$
+
+Using this coding, least squares could be used to fit a linear regression model to predict *Y* on the basis of a set of predictors $X_1 ,\dots , X_p$ . Unfortunately, this coding implies an ordering on the outcomes, putting drug overdose in between stroke and epileptic seizure, and insisting that the difference between stroke and drug overdose is the same as the difference between drug overdose and epileptic seizure. In practice there is no particular reason that this needs to be the case. For instance, one could choose an equally reasonable coding,
+
+$$ 
+Y = \begin{cases}
+      1, & \text{if epileptic seizure;} \\
+      2, & \text{if stroke;} \\
+      3, & \text{if drug overdose.}
+    \end{cases}  
+$$
+
+which would imply a totally different relationship among the three conditions. Each of these codings would produce fundamentally different linear models that would ultimately lead to different sets of predictions on test observations.
+
+More relevant to our data, if we are trying to classify a customer as a high- vs. low-risk defaulter based on their balance we *could* use linear regression; however, the figure below illustrates how <font color="blue">linear regression</font> would predict the probability of defaulting.  Unfortunately, for balances close to zero we predict a negative probability of defaulting; if we were to predict for very large balances, we would get values bigger than 1. These predictions are not sensible, since of course the true probability of defaulting, regardless of credit card balance, must fall between 0 and 1.
+
+```{r plot1a, fig.align='center', fig.width=6, fig.height=4, echo=FALSE}
+default %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob)) +
+  geom_point(alpha = .15) +
+  geom_smooth(method = "lm") +
+  ggtitle("Linear regression model fit") +
+  xlab("Balance") +
+  ylab("Probability of Default")
+```
+
+To avoid this problem, we must model the probability of $Y$ given our predictor variable(s) *X* using a function that gives outputs between 0 and 1 for all values of *X*. There are several models that provide this functionality; the ones we will cover in this tutorial are:
+
+1. Logistic Regression
+2. Linear Discriminant Analysis
+3. Quadratic Discriminant Analysis
+
+But before demonstrating these approaches lets first prepare our data.
+
+
+## Preparing Our Data
+
+As in the regression tutorial, we'll split our data into training (60%) and testing (40%) data sets so we can assess how well our model performs on an out-of-sample data set.  Let's see if you remember.  Go ahead and set your seed value to 123 and then perform the 60/40 split on the `default` data.
+
+```{r, echo=FALSE}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+
+```{r create_training, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data"}
+default
+```
+
+
+```{r create_training-hint-1}
+set.seed(123)
+```
+
+```{r create_training-hint-2}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+```
+
+```{r create_training-hint-3}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+
+```{r training-length, echo=FALSE}
+question("How many observations do you have in the training set?",
+  answer("5978"),
+  answer("6074"),
+  answer("6000"),
+  answer("6047", correct = TRUE)
+)
+```
+
+Alright, now we're ready to do some analysis!
+
+
+## Logistic Regression
+
+### Introduction
+
+Logistic regression (aka logit regression or logit model) was developed by statistician [David Cox](https://en.wikipedia.org/wiki/David_Cox_(statistician)) in 1958 and is a regression model where the response variable *Y* is categorical. Logistic regression allows us to estimate the probability of a categorical response based on one or more predictor variables (*X*). It allows one to say that the presence of a predictor increases (or decreases) the probability of a given outcome by a specific percentage. This tutorial covers the case when *Y* is binary — that is, where it can take only two values, "0" and "1", which represent outcomes such as pass/fail, win/lose, alive/dead or healthy/sick. Cases where the dependent variable has more than two outcome categories may be analysed with multinomial logistic regression, ordinal logistic regression (if the multiple categories are ordered), or with linear/quadratic discriminant analysis.
+
+In logistic regression, we use the logistic function, which is defined in Eq. 1 to calculate the probability of *Y* given the value of *X*.  This is notated as $p(X)=Pr(Y=1|X)$.  
+
+$$ p(X) = \frac{e^{\beta_0 + \beta_1X}}{1 + e^{\beta_0 + \beta_1X}} \tag{1}$$
+
+This produces an "S" shaped curve that provides the __*probability*__ of *Y* being either 0 (*no default*) or 1 (*default*) as illustrated below.  Depicted by the curve, as a customer's balance approaches $2,000, the probability of defaulting begins to increase rapidly.  
+
+```{r plot1b, fig.align='center', fig.width=6, fig.height=4, echo=FALSE}
+binomial_smooth <- function(...) {
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), ...)
+}
+
+default %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob)) +
+  geom_point(alpha = .15) +
+  binomial_smooth() +
+  ggtitle("Logistic regression model fit") +
+  xlab("Balance") +
+  ylab("Probability of Default")
+```
+
+
+
+### Simple Logistic Regression
+
+#### Model Building & Evaluation
+
+Simple logistic regression is where we use one predictor variable to predict the probability of the outcome.  Regarding our `default` data we can fit a logistic regression model in order to predict the probability of a customer defaulting based on the average balance carried by the customer. The `glm` function fits generalized linear models, a class of models that includes logistic regression. The syntax of the `glm` function is similar to that of `lm`, except that we must pass the argument `family = binomial` in order to tell R to run a logistic regression rather than some other type of generalized linear model.
+
+```{r}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+```
+
+In the background the `glm`, uses *maximum likelihood* to fit the model. The basic intuition behind using maximum likelihood to fit a logistic regression model is as follows: we seek estimates for $\beta_0$ and $\beta_1$ such that the predicted probability $\hat{p}(x_i)$ of default for each individual, using Eq. 1, corresponds as closely as possible to the individual’s observed default status. In other words, we try to find $\hat\beta_0$ and $\hat\beta_1$ such that plugging these estimates into the model for *p(X)*, given in Eq. 1, yields a number close to one for all individuals who defaulted, and a number close to zero for all individuals who did not. This intuition can be formalized using a mathematical equation called a *likelihood function*:
+
+$$ \ell(\beta_0, \beta_1) = \prod_{i:y_i=1}p(x_i) \prod_{i':y_i'=0}(1-p(x_i'))  \tag{2} $$
+
+The estimates $\beta_0$ and $\beta_1$ are chosen to *maximize* this likelihood function. Maximum likelihood is a very general approach that is used to fit many of the non-linear models that we will examine in future tutorials. 
+
+Similar to linear regression we can assess the model using `summary` or `glance`.  Go ahead and apply `summary` and/or `glance` to our model's output.
+
+```{r prepare-data-2, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r model1-summary, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-2"}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+```
+
+```{r model1-summary-hint-1}
+summary(model1)
+```
+
+```{r model1-summary-hint-2}
+glance(model1)
+```
+
+Note that the coefficient output format is similar to what we saw in linear regression; however, the goodness-of-fit details at the bottom of `summary` differ.  We'll get into this more later but just note that you see the word __*deviance*__.  Deviance is analogous to the sum of squares calculations in linear regression and is a measure of the lack of fit to the data in a logistic regression model.  The null deviance represents the difference between a model with only the intercept (which means "no predictors") and a saturated model (a model with a theoretically perfect fit). The goal is for the model deviance (noted as *Residual deviance* when using `summary`) to be lower; smaller values indicate better fit. In this respect, the null model provides a baseline upon which to compare predictor models.  
+
+Similar to linear regression, we can also use `tidy` to assess the coefficient estimates and related information that result from fitting a logistic regression model in order to predict the probability of *default = Yes* using *balance*. Go ahead and apply `tidy` to our model's output.
+
+```{r model1-coeff, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-2"}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+```
+
+```{r model1-coeff-solution}
+tidy(model1)
+```
+
+Bear in mind that the coefficient estimates from logistic regression characterize the relationship between the predictor and response variable on a <u>log-odds scale</u> (see Ch. 3 of ISLR[^islr] for more details).  Thus, we see that $\hat\beta_1 = 0.0057$; this indicates that an increase in balance is associated with an increase in the probability of default. To be precise, a one-unit increase in balance is associated with an increase in the log-odds of default by 0.0057 units.
+
+Many aspects of the coefficient output are similar to those discussed in the linear regression output. For example, we can measure the confidence intervals and accuracy of the coefficient estimates by computing their standard errors.  For instance, the coefficient for *balance* ($\hat\beta_1$) has a *p-value < 2e-16* suggesting a statistically significant relationship between balance carried and the probability of defaulting.  We can also use the standard errors to get confidence intervals as we did in the linear regression tutorial.  Do you remember how to assess the confidence intervals?
+
+```{r model1-confint, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-2"}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+```
+
+```{r model1-confint-solution}
+confint(model1)
+```
+
+
+#### Exercise
+
+Go ahead and create a logistic regression model that uses student status (variable *student*) to predict the probability of default.  Assess the model to answer the questions that follow:
+
+
+```{r prepare-data-3, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r model2, exercise=TRUE, exercise.setup = "prepare-data-3"}
+
+```
+
+```{r model2-hint-1}
+# first you need to create the model
+exercise <- glm(default ~ student, family = "binomial", data = train)
+```
+
+```{r model2-hint-2}
+# second, any of the following can be used to answer the questions
+summary(exercise)
+glance(exercise)
+tidy(exercise)
+```
+
+```{r model2-questions, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is null deviance? What is the model's deviance?",
+  answer("Null: 1723; Model: 909"),
+  answer("Null: 909; Model: 1723"),
+  answer("Null: 1715; Model: 909"),
+  answer("Null: 1723; Model: 1715", correct = TRUE)
+),
+question("What is the coefficient for the student predictor variable?",
+  answer("0.44", correct = TRUE),
+  answer("-3.55"),
+  answer(".0057"),
+  answer(".25")
+),
+question("Is the student predictor variable statistically significant?",
+  answer("Yes", correct = TRUE),
+  answer("No")
+),
+question("How do you interpret the student predictor variable coefficient?",
+  answer("A student has a 44% probability of defaulting"),
+  answer("A student has a lower odds of defaulting than non-students"),
+  answer("A student has a higher odds of defaulting than non-students", correct = TRUE)
+)
+)
+```
+
+#### Making Predctions
+
+Once the coefficients have been estimated, it is a simple matter to compute the probability of default for any given credit card balance. Mathematically, using the coefficient estimates from our model we predict that the default probability for an individual with a balance of $1,000 is less than 0.5%
+
+$$ \hat{p}(X) = \frac{e^{\hat\beta_0 + \hat\beta_1X}}{1 + e^{\hat\beta_0 + \hat\beta_1X}} = \frac{e^{-11.0063 + 0.0057 \times 1000}}{1 + e^{-11.0063 + 0.0057 \times 1000}} = 0.004785 \tag{3} $$
+
+We can predict the probability of defaulting in R using the `predict` function (be sure to include `type = "response"`).  Here we compare the probability of defaulting  based on balances of \$1000 and \$2000.  As you can see as the balance moves from \$1000 to \$2000 the probability of defaulting increases signficantly, from 0.5% to 58%!  
+
+```{r}
+predict(model1, data.frame(balance = c(1000, 2000)), type = "response")
+```
+
+Go ahead and predict the probability of defaulting for a student and non-student using the below model.
+
+```{r model1-predict, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-3"}
+student <- glm(default ~ student, family = "binomial", data = train)
+```
+
+```{r model1-predict-solution}
+predict(student, data.frame(student = c("Yes", "No")), type = "response")
+```
+
+```{r model1-predict-questions, echo=FALSE}
+question("What is the probability of defaulting for a student? Non-student?",
+  answer("student: 2.8%; non-student: 4.3%"),
+  answer("student: 3.3%; non-student: 4.3%"),
+  answer("student: 4.3%; non-student: 2.8%", correct = TRUE)
+)
+```
+
+In fact, this model suggests that a student has nearly twice the odds of defaulting than non-students.  However, in the next section we'll see why. Mathematically, the prediction is performing the following:
+
+$$ \hat{p}(\text{default=Yes|student=Yes}) = \frac{e^{-3.55 + 0.44 \times 1}}{1 + e^{-3.55 + 0.44 \times 1}} = 0.0426 \\  \hat{p}(\text{default=Yes|student=No}) = \frac{e^{-3.55 + 0.44 \times 0}}{1 + e^{-3.55 + 0.44 \times 0}} = 0.0278$$
+
+### Multiple Logistic Regression
+
+We can also extend our model as seen in Eq. 1 so that we can predict a binary response using __*multiple*__ predictors where $X = (X_1,\dots, X_p)$ are *p* predictors:
+
+$$ p(X) = \frac{e^{\beta_0 + \beta_1X + \cdots + \beta_pX_p }}{1 + e^{\beta_0 + \beta_1X + \cdots + \beta_pX_p}} \tag{4} $$
+
+Let's go ahead and fit a model that predicts the probability of *default* based on the *balance*, *income* (in thousands of dollars), and *student* status variables.  The syntax for adding multiple predictor variables is similar to how we did it with linear regression.  Give it a shot.  After you've fit the model check out the summary results.
+
+```{r prepare-data-4, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r multi-logistic, exercise=TRUE, exercise.setup = "prepare-data-4"}
+
+```
+
+```{r multi-logistic-hint-1}
+# first fit the logistic regression model
+model2 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+```
+
+```{r multi-logistic-hint-2}
+# second, assess the results with any of the following
+summary(model2)
+glance(model2)
+tidy(model2)
+confint(model2)
+```
+
+```{r multi-logistic-questions, echo=FALSE}
+question("Which of the predictor variables are statistically significant (p-value < 0.05)?",
+  answer("balance", correct = TRUE),
+  answer("income"),
+  answer("student", correct = TRUE)
+)
+```
+
+There is a surprising result here. The p-values associated with *balance* and *student=Yes* status are very small, indicating that each of these variables is associated with the probability of defaulting. However, the coefficient for the student variable is negative, indicating that students are less likely to default than non-students. In contrast, the coefficient for the *student* variable in the last section, where you predicted the probability of default based only on student status, indicated that students have a <u>greater</u> probability of defaulting.  What gives?  Take some time to investigate the data to see if you can figure out why?
+
+```{r multi-data-mining, exercise=TRUE, exercise.setup = "prepare-data-4"}
+
+```
+
+```{r multi-data-mining-hint-1}
+# compare average balance for students vs. non-students
+ggplot(train, aes(student, balance, fill = student)) +
+  geom_boxplot()
+```
+
+```{r multi-data-mining-hint-2}
+# compare probability of default for students vs. non-students
+train %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob, color = student)) +
+  geom_point(alpha = .15) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE)
+```
+
+The right-hand panel of the figure below provides an explanation for this discrepancy. The variables *student* and *balance* are correlated. Students tend to hold higher levels of debt, which is in turn associated with higher probability of default. In other words, students are more likely to have large credit card balances, which, as we know from the left-hand panel of the below figure, tend to be associated with high default rates. Thus, even though an individual student with a given credit card balance will tend to have a lower probability of default than a non-student with the same credit card balance, the fact that students on the whole tend to have higher credit card balances means that overall, students tend to default at a higher rate than non-students. This is an important distinction for a credit card company that is trying to determine to whom they should offer credit. A student is riskier than a non-student if no information about the student’s credit card balance is available. However, that student is less risky than a non-student *with the same credit card balance*!
+
+```{r plot3, fig.align='center', fig.width=11, fig.height=6, echo=FALSE}
+model2 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+
+avg <- train %>% 
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>% 
+  group_by(student) %>% 
+  summarise(avg = mean(prob))
+
+p1 <- train %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob, color = student)) +
+  geom_point(alpha = .15) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +
+  ggtitle("The S-curve shows that students have a lower probability of \ndefaulting than non-students given the balance. The dashed \nline shows that when balance is not considered, students \nhave an overall higher probability of defaulting than non-\nstudents.") +
+  xlab("Balance") +
+  ylab("Probability of Default") +
+  geom_hline(data = avg, aes(yintercept = avg, color = student), linetype = "dashed") +
+  theme(legend.position = "bottom")
+
+p2 <- train %>%
+  ggplot(aes(student, balance, fill = student)) +
+  geom_boxplot() +
+  ggtitle("Students tend to have higher credit card balance, which \nis causing them to have a higher probability of defaulting \nwhen the credit card balance is not considered.\n\n") +
+  xlab("Student Status") +
+  ylab("Balance") +
+  theme(legend.position = "bottom")
+ 
+gridExtra::grid.arrange(p1, p2, nrow = 1) 
+
+```
+
+
+This simple example illustrates the dangers and subtleties associated with performing regressions involving only a single predictor when other predictors may also be relevant. The results obtained using one predictor may be quite different from those obtained using multiple predictors, especially when there is correlation among the predictors. This phenomenon is known as *confounding*.
+
+In the case of multiple predictor variables sometimes we want to understand which variable is the most influential in predicting the response (*Y*) variable.  We can do this with `varImp` from the `caret` package.  Here, we see that *balance* is the most important by a large margin whereas *student* status is less important followed by *income* (which was found to be insignificant anyways (p = .64)).  
+
+```{r, eval=FALSE}
+caret::varImp(model2)
+              Overall
+balance    19.0403764
+income      0.4647343
+studentYes  2.5835947
+```
+
+As before, we can easily make predictions with this multiple predictor model. For example, a student with a credit card balance of \$1,500 and an income of \$40,000 has an estimated probability of default of
+
+$$ \hat{p}(X) = \frac{e^{-10.907 + 0.00591 \times 1,500 - 0.00001 \times 40 -0.809 \times 1}}{1 + e^{-10.907 + 0.00591 \times 1,500 - 0.00001 \times 40 -0.809 \times 1}} = 0.054 $$
+
+A non-student with the same balance and income has an estimated probability of default of
+
+$$ \hat{p}(X) = \frac{e^{-10.907 + 0.00591 \times 1,500 - 0.00001 \times 40 -0.809 \times 0}}{1 + e^{-10.907 + 0.00591 \times 1,500 - 0.00001 \times 40 -0.809 \times 0}} = 0.114 $$
+
+We can do this same prediction in R with the following code:
+
+```{r}
+new.df <- tibble(balance = 1500, income = 40, student = c("Yes", "No"))
+predict(model2, new.df, type = "response")
+```
+
+Thus, we see that for the given *balance* and *income* (although income is insignificant) a student has about half the probability of defaulting than a non-student.  Go ahead and estimate the probability of default for a student with an income of \$50,000 carrying a credit card balance of \$2,150.
+
+```{r prepare-data-5, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r multi-student-pred, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-5"}
+model2 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+```
+
+```{r multi-student-pred-hint-1}
+# first create the data to predict
+new.df <- data.frame(balance = 2150, income = 50, student = "Yes")
+```
+
+```{r multi-student-pred-hint-2}
+# then use the data to predict
+predict(model2, new.df, type = "response")
+```
+
+```{r multi-student-questions, echo=FALSE}
+question("What is this student's probability of defaulting?",
+  answer("81%"),
+  answer("47%"),
+  answer("73%", correct = TRUE),
+  answer("56%")
+)
+```
+
+### Model Evaluation & Diagnostics
+
+So far we've created several logistic regression models and have assessed some basic model outputs. However, some critical questions remain. Are the models any good? How well does the model fit the data? And how accurate are the predictions on an out-of-sample data set? Let's look at how we can answer some of these questions for the following three models (note how each model adds an additional predictor variable):
+
+```{r}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+model2 <- glm(default ~ balance + income, family = "binomial", data = train)
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+```
+
+
+### Goodness-of-Fit
+
+In the linear regression tutorial we saw how the F-statistic, $R^2$ and *adjusted* $R^2$, and residual diagnostics inform us of how good the model fits the data. Here, we'll look at a few ways to assess the goodness-of-fit for our logit models.
+
+#### Likelihood Ratio Test
+
+First, we can use a *Likelihood Ratio Test* to assess if by adding predictor variables we are improving the fit.  We can use `anova` to perform this test.  The results indicate that, compared to `model1`, `model2` reduces the residual deviance by 7 (remember, a goal of logistic regression is to find a model that minimizes deviance residuals).  More imporantly, this improvement is statisticallly significant at *p < 0.05*.  This suggests that `model2` does provide an improved model fit.
+
+```{r}
+anova(model1, model2, test = "Chisq")
+```
+
+Go ahead and compare model 3 to models 1 and 2.
+
+```{r prepare-data-6, echo=FALSE}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+model2 <- glm(default ~ balance + income, family = "binomial", data = train)
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+```
+
+```{r anova, exercise=TRUE, exercise.setup = "prepare-data-6"}
+
+```
+
+The results indicate that as we continue adding predictor variables we improve the model fit.  However, its important to keep in mind that adding predictor variables to a model will almost always reduce the model deviance compared to the null deviance, which results in an increase in the log likelihood.  Thus, we should __*not*__ use these results as a sole indicator of a superior model.
+
+
+#### Pseudo $R^2$
+
+Unlike linear regression with ordinary least squares estimation, there is no $R^2$ statistic which explains the proportion of variance in the dependent variable that is explained by the predictors. However, there are a number of pseudo $R^2$ metrics that could be of value. Most notable is [McFadden’s $R^2$](http://stats.stackexchange.com/questions/82105/mcfaddens-pseudo-r2-interpretation), which is defined as 
+
+$$1−\frac{ln(LM_1)}{ln(LM_0)} \tag{5}$$ 
+
+where $ln(LM_1)$ is the log likelihood value for the fitted model and $ln(LM_0)$ is the log likelihood for the null model with only an intercept as a predictor. The measure ranges from 0 to just under 1, with values closer to zero indicating that the model has no predictive power. However, unlike $R^2$ in linear regression, models rarely achieve a high McFadden $R^2$. In fact, in McFadden's own words, models with a McFadden pseudo $R^2 \approx 0.40$ represents a very good fit.  We can assess McFadden's pseudo $R^2$ values for our models with the `pR2` function from the `pscl` package.  
+
+```{r, eval=FALSE}
+pscl::pR2(model1)["McFadden"]
+ McFadden 
+0.4726215 
+```
+
+Go ahead and check out the pseudo $R^2$ for all three models.
+
+```{r prepare-data-6a, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r psuedo-rsq, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-6a"}
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+model2 <- glm(default ~ balance + income, family = "binomial", data = train)
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+
+# insert code here to assess pseudo-R^2 values
+
+```
+
+```{r psuedo-rsq-hint-1}
+pscl::pR2(model1)["McFadden"]
+pscl::pR2(model2)["McFadden"]
+pscl::pR2(model3)["McFadden"]
+```
+
+We see that all three models have approximately the same pseudo $R^2$.  Why would this be? Go ahead and fit a model with just *income* or just *student* as the predictor variable and check out their pseudo $R^2$ results.  Now compare to a model that uses just *balance* as a predictor variable.
+
+```{r prepare-data-7, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r psuedo-rsq2, exercise=TRUE, exercise.setup = "prepare-data-7"}
+
+```
+
+```{r psuedo-rsq2-hint-1}
+# fit models
+glm.fit1 <- glm(default ~ income, family = "binomial", data = train)
+glm.fit2 <- glm(default ~ student, family = "binomial", data = train)
+glm.fit3 <- glm(default ~ balance, family = "binomial", data = train)
+```
+
+```{r psuedo-rsq2-hint-2}
+# assess psuedo R square
+pscl::pR2(glm.fit1)["McFadden"]
+pscl::pR2(glm.fit2)["McFadden"]
+pscl::pR2(glm.fit3)["McFadden"]
+```
+
+
+Note how the model with just *balance* has a psuedo $R^2$ of .47 while the models with just *income* and *student* have psuedo $R^2$ scores of < .01.  This suggests that using a model with *balance* captures the bulk of the variance in the *default* variable while adding the variables *income* and *student* will not account for much more variance.  This is why we were seeing very little difference in our pseudo-$R^2$ values for `model1`, `model2`, and `model3`...they all included the *balance* variable!
+
+#### Residual Assessment
+
+Keep in mind that logistic regression does not assume the residuals are normally distributed nor that the variance is constant. However, the deviance residual is useful for determining if individual points are not well fit by the model. Here we can fit the standardized deviance residuals to see how many exceed 3 standard deviations.  First we extract several useful bits of model results with `augment` and then proceed to plot.
+
+```{r plot4, fig.align='center', fig.width=6, fig.height=4, warning=FALSE}
+# extract deviance residuals and other disgnostic parameters with augment
+model1_data <- augment(model1) %>% 
+  mutate(index = 1:n())
+
+# plot standardized deviance residuals
+ggplot(model1_data, aes(index, .std.resid, color = default)) + 
+  geom_point(alpha = .5) +
+  geom_ref_line(h = 3)
+```
+
+Those standardized residuals that exceed 3 represent possible outliers and may deserve closer attention.  We can filter for these residuals to get a closer look.  We see that all these observations represent customers who defaulted with budgets that are much lower than the normal defaulters.
+
+```{r, warning=FALSE}
+model1_data %>% 
+  filter(abs(.std.resid) > 3)
+```
+
+Similar to linear regression we can also identify influential observations with Cook's distance values.  Here we identify the top 5 largest values.
+
+```{r plot5, fig.align='center', fig.width=6, fig.height=4}
+plot(model1, which = 4, id.n = 5)
+```
+
+And we can investigate these further as well. Here we see that the top five influential points include:
+
+- those customers with balances less than $1,000 and defaulted
+- two customers with balances over $2,000 and did not default
+
+This means if we were to remove these observations (not recommended), the shape, location, and confidence interval of our logistic regression S-curve would likely shift.
+
+```{r}
+model1_data %>% 
+  top_n(5, .cooksd)
+```
+
+Go ahead and assess the residuals of model's 2 and/or 3 (`model2`, `model3`). See if you can identify:
+
+1. How many observations have residuals that exceed 3 standard deviations?
+2. Which observations have the highest Cook's distance?
+3. Filter for these high Cook's distance observations, what predictor variable values do they have?
+
+```{r prepare-data-8, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+model2 <- glm(default ~ balance + income, family = "binomial", data = train)
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+```
+
+```{r residuals, exercise=TRUE, exercise.setup = "prepare-data-8", warning=FALSE}
+
+```
+
+
+
+### Validation of Predicted Values
+
+#### Classification Rates
+
+When developing models for prediction, the most critical metric is regarding how well the model does in predicting the target variable on out-of-sample observations. First, we need to use the estimated models to predict values on our training data set (`train`). When using `predict` be sure to include `type = response` so that the prediction returns the probability of default.
+
+```{r}
+test.predicted.m1 <- predict(model1, newdata = test, type = "response")
+test.predicted.m2 <- predict(model2, newdata = test, type = "response")
+test.predicted.m3 <- predict(model3, newdata = test, type = "response")
+```
+
+Now we can compare the predicted target variable versus the observed values for each model and see which performs the best. We can start by assessing the __*classification accuracy rates*__ (or we could flip this for the error rates).  To do this we can take our `test` data and add the results of our predicted data for model 1 (aka `test.predicted.m1`). Here we say if the probability is greater than 0.5 we are predicting "Yes" they will default.  We then use `summarise` to compute the percentage of predicted values that equal the actual (`default`) value.    
+
+```{r}
+test %>%
+  mutate(m1.pred = ifelse(test.predicted.m1 > 0.5, "Yes", "No")) %>%
+  summarise(m1.error = mean(default == m1.pred))
+```
+
+For model 1 our accuracy rate is 97%. Seems pretty high doesn't it?  Well, considering that only 3% of the customers in our total data set actually defaulted, by simply predicting that every customer will *not* default we would get a 3% error rate.  More importantly, we want to assess other forms of accuracy and error rates.
+
+To do this we can use a __*confusion matrix*__, which is a table that describes the classification performance of a model on the test data. We can create a confusion matrix with the following:
+
+```{r}
+actual <- test$default
+predicted <- ifelse(test.predicted.m1 > 0.5, "Yes", "No")
+
+# confusion matrix -> raw numbers
+table(actual, predicted)
+
+# confusion matrix >- percentages
+table(actual, predicted) %>% prop.table() %>% round(3)
+```
+
+Each quadrant of the table has an important meaning.  In this case the "No" and "Yes" in the rows represent whether customers actually defaulted or not.  The "No" and "Yes" in the columns represent whether we predicted customers to default or not (based on 50% probability of defaulting being the threshold).
+
+- **true positives** (Bottom-right quadrant): these are cases in which we predicted the customer would default and they did.  In the raw number confusion matix you can see that 40 observations fall into this category.  The percentage confusion matrix tells us that 1% of the observations fall into this category.
+- **true negatives** (Top-left quadrant): We predicted no default, and the customer did not default.  You can see that 3,803, or 96% of observations, fall into this category.
+- **false positives** (Top-right quadrant): We predicted yes, but they didn't actually default. (Also known as a "Type I error.")
+- **false negatives** (Bottom-left): We predicted no, but they did default. (Also known as a "Type II error.")
+
+Go ahead and create confusion matrices for models 2 and 3. 
+
+```{r prepare-data-9, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+model1 <- glm(default ~ balance, family = "binomial", data = train)
+model2 <- glm(default ~ balance + income, family = "binomial", data = train)
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+test.predicted.m1 <- predict(model1, newdata = test, type = "response")
+test.predicted.m2 <- predict(model2, newdata = test, type = "response")
+test.predicted.m3 <- predict(model3, newdata = test, type = "response")
+```
+
+```{r confusion-matrix, exercise=TRUE, exercise.setup = "prepare-data-9", warning=FALSE}
+
+```
+
+```{r confusion-matrix-hint-1}
+# create data for confusion matrices
+actual <- test$default
+predicted.m2 <- ifelse(test.predicted.m2 > 0.5, "Yes", "No")
+predicted.m3 <- ifelse(test.predicted.m3 > 0.5, "Yes", "No")
+```
+
+```{r confusion-matrix-hint-2}
+# create raw value confusion matrices
+table(actual, predicted.m2)
+table(actual, predicted.m3)
+```
+
+```{r confusion-matrix-hint-3}
+# create percentage value confusion matrices
+table(actual, predicted.m2) %>% prop.table() %>% round(3)
+table(actual, predicted.m3) %>% prop.table() %>% round(3)
+```
+
+We can gain some additional insights by looking at our confusion matrix.  For example, with model 1...
+
+```{r}
+# model 1 confusion matrix
+table(actual, predicted)
+```
+
+...we see that there are a total of $98 + 40 = 138$ customers that defaulted.  Of the total defaults, $98 / 138 =  71\%$ were *not* predicted.  Alternatively, we could say that only $40 / 138 = 29\%$ of default occurrences were predicted - this is known as the the *precision* (also commonly called *sensitivity*) of our model.  So while the overall error rate is low, the precision rate is also low, which is not good! 
+
+With classification models you will also here the term *specificity* when characterizing the performance of the model. The *specificity* is the percentage of non-defaulters that are correctly identified, here $1 - 12 / (3803 + 12) = 99\%$.  Therefore, this model has high specificity but low sensitivity. The importance between *sensititivy* (aka precision) and *specificity* is dependent on context.  Often, we want to balance these two measures.  In some cases we may want to increase the performance of just one measure.  For example, a credit card company may be more concerned with *sensititivy* (aka accurately predicting customers that actually end up defaulting) since they want to reduce their risk.  Therefore, they may be more concerned with tuning a model so that their *sensititivy/precision* is improved.
+
+Go ahead and assess the sensitivity of models 2 and 3.
+
+```{r confusion-matrix-2, exercise=TRUE, exercise.setup = "prepare-data-9", warning=FALSE}
+
+```
+
+```{r confusion-matrix-2-hint-1}
+# sensitivity of model 2
+actual <- test$default
+predicted.m2 <- ifelse(test.predicted.m2 > 0.5, "Yes", "No")
+table(actual, predicted.m2)
+39/(99+39)
+```
+
+```{r confusion-matrix-2-hint-2}
+# sensitivity of model 3
+actual <- test$default
+predicted.m3 <- ifelse(test.predicted.m3 > 0.5, "Yes", "No")
+table(actual, predicted.m3)
+37/(101+37)
+```
+
+```{r sensitivity-questions, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the sensitivity of model 2 and model 3 (of the defaulters, how many were predicted)?",
+  answer("Model2: 31%; Model 3: 33%"),
+  answer("Model2: 28%; Model 3: 33%"),
+  answer("Model2: 28%; Model 3: 27%", correct = TRUE),
+  answer("Model2: 34%; Model 3: 27%")
+),
+question("If our boss was only concerned with sensitivity (or correctly predicting customers that are going to default), which model would be preferred?",
+  answer("Model 1", correct = TRUE),
+  answer("Model 2"),
+  answer("Model 3"),
+  correct = "Correct! In this case the simplest model (model 1) has the highest sensitivity (29%)"
+)
+)
+```
+
+Most of the time we are concerned with balancing *sensitivity* and *specificity*. In other words, correctly predicting those customers that are going to default and also those that are not going to default.  The [receiving operating characteristic (ROC)](http://www.dataschool.io/roc-curves-and-auc-explained/) is a visual measure of classifier performance that helps assess this balance. Using the proportion of positive data points that are correctly considered as positive (sensitivity) and the proportion of negative data points that are mistakenly considered as positive (1 - specificity), we generate a graphic that shows the trade off between the rate at which you can correctly predict something with the rate of incorrectly predicting something. Ultimately, we’re concerned about the area under the ROC curve, or AUC. That metric ranges from 0.50 to 1.00, and values above 0.80 indicate that the model does a good job in discriminating between the two categories which comprise our target variable. Lets compare the ROC curves for our three models:
+
+```{r, message=FALSE, warning=FALSE, fig.align='center', fig.width=9, fig.height=3.5}
+library(ROCR)
+
+par(mfrow=c(1, 3))
+
+prediction(test.predicted.m1, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "Model 1")
+
+prediction(test.predicted.m2, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "Model 2")
+
+prediction(test.predicted.m3, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "Model 3")
+```
+
+They all look the same!  That's because all three models includes the *balance* variable, which does a good job in determining the classification of the customer.  Now let's compare the ROC and AUC for model 1 against a model that just uses the *student* variable (remember that the student variable alone does not do a good job classifying the customers).  
+
+```{r, message=FALSE, warning=FALSE, fig.align='center', fig.width=9, fig.height=4}
+glm.student <- glm(default ~ student, family = "binomial", data = train)
+predicted.student <- predict(glm.student, newdata = test, type = "response")
+
+par(mfrow=c(1, 2))
+
+prediction(test.predicted.m1, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "Model 1: default ~ balance")
+
+prediction(predicted.student, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "Model 2: default ~ student")
+```
+
+We definitely see a strong difference in performance. We want our ROC plots to look more like model 1's (left) rather than the model only based on the student variable (right)! 
+
+And to compute the AUC numerically we can use the following. Remember, AUC will range from .50 - 1.00. Thus, the student-only model is a very poor classifying model while model 1 is a very good classifying model.
+
+```{r}
+# model 1 AUC
+prediction(test.predicted.m1, test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+
+# model 2 AUC
+prediction(predicted.student, test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+```
+
+We can continue to "tune" our models to improve these classification rates.  If you can improve your AUC and ROC curves (which means you are improving the classification accuracy rates) you are creating __*lift*__, meaning you are lifting the classification accuracy. 
+
+Next, let's look at another modeling technique we can use to classify these customers.
+
+## Discriminant Analysis
+
+### Introduction
+
+In the previous tutorial you learned that logistic regression is a classification algorithm traditionally limited to only two-class classification problems (i.e. *default = Yes or No*). So why do we need another classification method beyond logistic regression?  There are several reasons:
+
+- When the classes of the reponse variable *Y* (i.e. *default = "Yes", default = "No"*) are well-separated, the parameter estimates for the logistic regression model are surprisingly unstable. 
+- If *n* is small and the distribution of the predictors *X* is approximately normal in each of the classes, logistic regression model is, again, surprisingly unstable.
+- Logistic regression is not well suited for classification problems beyond binary responses (i.e.: medical diagnosis of: *stroke*, *drug overdose*, or *epileptic seizure*).
+- It is always good to compare the results of different analytic techniques; this can either help to confirm results or highlight how different modeling assumptions and characterstics uncover new insights.
+
+Linear (and its cousin Quadratic) Discriminant Analysis (LDA & QDA) are additional classification techniques that are appropriate to have in your analytic toolbox. These modeling techniques model the distribution of the predictors *X* separately in each of the response classes (i.e. *default = "Yes", default = "No"* ), and then use [Bayes’ theorem](https://en.wikipedia.org/wiki/Bayes'_theorem) to flip these around into estimates for the probability of the response category given the value of *X*.
+
+However, its important to note that LDA & QDA have assumptions that are often more restrictive then logistic regression:
+
+- Both LDA and QDA assume the the predictor variables *X* are drawn from a multivariate Gaussian (aka *normal*) distribution. 
+- LDA assumes equality of covariances among the predictor variables *X* across each all levels of *Y*.  This assumption is relaxed with the QDA model.
+- LDA and QDA require the number of predictor variables (*p*) to be less then the sample size (*n*).  Furthermore, its important to keep in mind that performance will severely decline as *p* approaches *n*.  A simple rule of thumb is to use LDA & QDA on data sets where $n \geq 5 \times p$.  
+
+### Linear Discriminant Analysis
+
+So how does LDA work? LDA computes "discriminant scores" for each observation to classify what response variable class it is in (i.e. default or not default). These scores are obtained by finding linear combinations of the independent variables. For a single predictor variable $X=x$ the LDA classifier is estimated as
+
+$$ \hat\delta_k(x) = x \cdot  \frac{\hat\mu_k}{\hat\sigma^2} - \frac{\hat\mu_k^2}{2\hat\sigma^2} + log(\hat\pi_k) \tag{6}$$
+
+where:
+
+- $\hat\delta_k(x)$ is the estimated discriminant score that the observation will fall in the *k*th class within the response variable (i.e. *default* or *not default*) based on the value of the predictor variable *x*
+- $\hat\mu_k$ is the average of all the training observations from the *k*th class
+- $\hat\sigma^2$ is the weighted average of the sample variances for each of the *K* classes
+- $\hat\pi_k$ is the prior probability that an observation belongs to the *k*th class (not to be confused with the mathematical constant $\pi \approx 3.14159$)
+
+This classifier assigns an observation to the *k*th class of $Y_k$ for which discriminant score ($\hat\delta_k(x)$) is largest.  For example, lets assume there are two classes (*A* and *B*) for the response variable *Y*.  Based on the predictor variable(s), LDA is going to compute the probability distribution of being classified as class *A* or *B*.  The linear decision boundary between the probability distributions is represented by the dashed line in the image below.  Discriminant scores to the left of the dashed line will be classified as *A* and scores to the right will be classified as *B*.
+
+<center>
+![](images/LDA.jpg)
+</center>
+
+When dealing with more than one predictor variable, the LDA classifier assumes that the observations in the *k*th class are drawn from a multivariate Gaussian distribution $N(\mu_k, \mathbf{Σ})$, where $\mu_k$ is a class-specific mean vector, and $\mathbf{Σ}$ is a covariance matrix that is common to all *K* classes.  Incorporating this into the LDA classifier results in 
+
+$$ \hat\delta_k(x) = x^T\mathbf{Σ}^{-1}\hat\mu_k  - \frac{1}{2}\hat\mu_k^T\mathbf{Σ}^{-1} - \hat\mu_k + log(\hat\pi_k) \tag{7}$$
+
+where __an observation will be assigned to class *k* where the discriminant score $\hat\delta_k(x)$ is largest__.
+
+#### Model Building and Evaluation
+
+In R, we fit a LDA model using the `lda` function, which is part of the `MASS` library. Notice that the syntax for the `lda` is identical to that of `lm` (as seen in the linear regression tutorial), and to that of `glm` (as seen in the logistic regression tutorial) except for the absence of the family option. 
+
+```{r lda.m1}
+(lda.m1 <- lda(default ~ balance + student, data = train))
+```
+
+The LDA output indicates that our prior probabilities are $\hat\pi_1 = 0.968$ and $\hat\pi_2 = 0.032$; in other words, 96.8% of the training observations are customers who did not default and 3% represent those that defaulted.  It also provides the group means; these are the average of each predictor within each class, and are used by LDA as estimates of $\mu_k$ in Eq. 6 & 7 above. These suggest that customers that tend to default have, on average, a credit card balance of $1,777 and are more likely to be students then non-defaulters (29% of non-defaulters are students whereas 39% of defaulters are).  However, as we learned from the logistic regression tutorial this is largely because students tend to have higher balances then non-students.  
+
+The *coefficients of linear discriminants* output provides the linear combination of *balance* and *student=Yes* that are used to form the LDA decision rule. In other words, these are the multipliers of the elements of *X = x* in Eq 6 & 7.  If 0.0022 × *balance* − 0.228 × *student* is large, then the LDA classifier will predict that the customer will default, and if it is small, then the LDA classifier will predict the customer will not default. We can use `plot` to produce plots of the linear discriminants, obtained by computing 0.0022 × *balance* − 0.228 × *student* for each of the training observations.  As you can see, when $0.0022 \times balance − 0.228 \times student < 0$ the probability increases that the customer *will not* default and when $0.0022 \times balance − 0.228 \times student>0$ the probability increases that the customer *will* default.
+
+```{r lda.m1.plot, fig.align='center', fig.height=6}
+plot(lda.m1)
+```
+
+Go ahead and fit an LDA model with *default* being a function of *balance*, *student*, and *income*.  
+
+```{r prepare-data-10, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+```{r lda-model, exercise=TRUE, exercise.setup = "prepare-data-10", warning=FALSE}
+
+```
+
+```{r lda-model-hint-1}
+lda.ex1 <- lda(default ~ balance + student + income, data = train)
+```
+
+```{r lda-model-questions, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the income group mean for non-defaulters?",
+  answer("$31,597"),
+  answer("$1,777"),
+  answer("$33,438", correct = TRUE),
+  answer("$29,579")
+),
+question("What is the income group mean for defaulters?",
+  answer("$31,597", correct = TRUE),
+  answer("$1,777"),
+  answer("$33,438"),
+  answer("$29,579")
+),
+question("What is the coefficient of linear discriminants for the income variable?",
+  answer("2.232375e-03"),
+  answer("-1.932555e-08", correct = TRUE),
+  answer("3.946355e-02"),
+  answer("-2.283493e-01")
+)
+)
+```
+
+#### Making Predictions
+
+We can use `predict` for LDA much like we did with logistic regression. I'll illustrate the output that `predict` provides based on this simple data set.
+
+```{r}
+(df <- tibble(balance = rep(c(1000, 2000), 2), 
+       student = c("No", "No", "Yes", "Yes")))
+```
+
+Below we see that `predict` returns a list with three elements. The first element, `class`, contains LDA’s predictions about the customer defaulting. Here we see that the second observation (non-student with balance of $2,000) is the only one that is predicted to default.  The second element, `posterior`, is a matrix that contains the posterior probability that the corresponding observations will or will not default. Here we see that the only observation to have a posterior probability of defaulting greater than 50% is observation 2, which is why the LDA model predicted this observation will default.  However, we also see that observation 4 has a 42% probability of defaulting.  Right now the model is predicting that this observation will not default because this probability is less than 50%; however, we will see shortly how we can make adjustments to our posterior probability thresholds.  Finally, `x` contains the linear discriminant values, described earlier.
+
+```{r}
+(df.pred <- predict(lda.m1, df))
+```
+
+Based on this model, compare the posterior probabilities of default for a person carrying a balance of $2,150.  Furthermore, you are not sure if they are a student or not, so compare these posterior probabilities for a student and non-student.
+
+
+```{r lda-model2, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-10"}
+lda.m1 <- lda(default ~ balance + student, data = train)
+```
+
+```{r lda-model2-hint-1}
+# create a data frame of the situtation
+df <- tibble(balance = 2150, student = c("No", "Yes"))
+```
+
+```{r lda-model2-hint-2}
+# produce predictions for this data frame
+predict(lda.m1, df)
+```
+
+```{r lda-model2-questions, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Do you expect this person to default?",
+  answer("Yes", correct = TRUE),
+  answer("No"),
+  correct = "Correct! Regardless of whether they are a student or not their probability of default is greater than 50%."
+),
+question("What is the posterior probability of defaulting for a student with a balance of $2,150?",
+  answer("29%"),
+  answer("40%"),
+  answer("71%"),
+  answer("60%", correct = TRUE)
+),
+question("What is the posterior probability of defaulting for a non-student with a balance of $2,150?",
+  answer("29%"),
+  answer("40%"),
+  answer("71%", correct = TRUE),
+  answer("60%")
+)
+)
+```
+
+The default setting is to use a 50% threshold for the posterior probabilities. If we wanted to use a posterior probability threshold other than 50% in order to make predictions, then we could easily do so. For instance, suppose that a credit card company is risk-adverse and wants to assume that a customer with 40% or greater probability is a high-risk customer.  We can easily assess the high-risk customers by adding the posterior probabilities of defaulting to our mock dataset and identifying those with greater than 40% probability.  Now we've identified two high-risk customers.
+
+```{r}
+df %>%
+  mutate(default.prob = df.pred$posterior[, 2],
+         default.pred = ifelse(df.pred$posterior[, 2] > .4, "Yes", "No"))
+```
+
+
+### Quadratic Discriminant Analysis
+
+As previously mentioned, LDA assumes that the observations within each class are drawn from a multivariate Gaussian distribution and the covariance of the predictor variables are common across all *k* levels of the response variable *Y*. Quadratic discriminant analysis (QDA) provides an alternative approach. Like LDA, the QDA classifier assumes that the observations from each class of *Y* are drawn from a Gaussian distribution. However, unlike LDA, QDA assumes that each class has its own covariance matrix. In other words, the predictor variables are not assumed to have common variance across each of the *k* levels in *Y*.  Mathematically, it assumes that an observation from the *k*th class is of the form $X ∼ N(\mu_k, \mathbfΣ_k)$, where $\mathbfΣ_k$ is a covariance matrix for the *k*th class. Under this assumption, the classifier assigns an observation to the class for which
+
+$$ \hat\delta_k(x) = -\frac{1}{2}x^T\mathbf{Σ}^{-1}_kx+x^T\mathbf{Σ}^{-1}_k\hat\mu_k  - \frac{1}{2}\hat\mu_k^T\mathbf{Σ}^{-1}_k\hat\mu_k - \frac{1}{2}log\big|\mathbf{Σ}_k\big|+log(\hat\pi_k) \tag{8}$$
+
+is largest.  Why is this important? Consider the image below.  In trying to classify the observations into the three (color-coded) classes, LDA (left plot) provides linear decision boundaries that are based on the assumption that the observations vary consistently across all classes.  However, when looking at the data it becomes apparent that the variability of the observations within each class differ.  Consequently, QDA (right plot) is able to capture the differing covariances and provide more accurate non-linear classification decision boundaries.
+
+<center>
+![](images/QDA.png)
+</center>
+
+#### Model Building and Evaluation
+
+Similar to `lda`, we can use the `MASS` library to fit a QDA model.  Here we use the `qda` function. The output is very similar to the `lda` output.  It contains the prior probabilities and the group means just as we saw in the LDA section. But it does not contain the coefficients of the linear discriminants, because the QDA classifier involves a quadratic, rather than a linear, function of the predictors.
+
+```{r}
+(qda.m1 <- qda(default ~ balance + student, data = train))
+```
+
+#### Make Predictions
+
+The `predict` function works in exactly the same fashion as for LDA except it does not return the linear discriminant values.  In comparing this simple prediction example to that seen in the LDA section we see minor changes in the posterior probabilities.  Most notably, the posterior probability that observation 4 will default increased by nearly 8% points.
+
+```{r}
+(df <- tibble(balance = rep(c(1000, 2000), 2), 
+       student = c("No", "No", "Yes", "Yes")))
+
+# LDA model predictions
+predict(lda.m1, df)
+
+# QDA model predictions
+predict(qda.m1, df)
+```
+
+### Prediction Evaluation
+
+Now that we understand the basics of evaluating our model and making predictions.  Let's assess how well our two models (`lda.m1` & `qda.m1`) perform on our test data set. First we need to apply our models to the test data using the `predict` function and our out-of-sample `test` data set. 
+
+```{r}
+test.predicted.lda <- predict(lda.m1, newdata = test)
+test.predicted.qda <- predict(qda.m1, newdata = test)
+```
+
+Now we can evaluate how well our model predicts by assessing the different classification rates (*precision/sensitivity*, *specificity*) discussed in the logistic regression tutorial.  First, let's look at the confusion matrix.  See if you can figure out how to create a confusion matrix from our predicted outputs.
+
+```{r prepare-data-11, echo=FALSE}
+default <- as_tibble(ISLR::Default)
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+lda.m1 <- MASS::lda(default ~ balance + student, data = train)
+qda.m1 <- MASS::qda(default ~ balance + student, data = train)
+test.predicted.lda <- predict(lda.m1, newdata = test)
+test.predicted.qda <- predict(qda.m1, newdata = test)
+```
+
+```{r lda-qda-cm, exercise=TRUE, exercise.setup = "prepare-data-11", warning=FALSE}
+
+```
+
+```{r lda-qda-cm-hint-1}
+# create actual and predicted vectors
+actual <- test$default
+lda.predicted <- test.predicted.lda$class
+qda.predicted <- test.predicted.qda$class
+```
+
+```{r lda-qda-cm-hint-2}
+# create confusion matrices with vectors
+table(actual, lda.predicted)
+table(actual, qda.predicted)
+```
+
+If we look at the raw numbers of our confusion matrix we can compute the precision:
+
+- LDA model: $29 / (109 + 29) = 21\%$
+- QDA model: $35 / (103 + 35) = 25\%$
+
+So our QDA model has a slightly higher precision than the LDA model; however, both of them are lower than the logistic regression model precision of 29% we saw in the logistic regression tutorial.
+
+
+If we are concerned with increasing the *precision* of our model we can tune our model by adjusting the posterior probability threshold. For instance, we might label any customer with a posterior probability of default above 20% as high-risk. Now the *precision* of our QDA model improves to $83 / (83 + 55) = 60\%$.  However, the overall error rate has increased to 4%. But a credit card company may consider this slight increase in the total error rate to be a small price to pay for more accurate identification of individuals who do indeed default.  It's important to keep in mind these kinds of trade-offs, which are common with classification models - tuning models can improve certain classification rates while worsening others.
+
+```{r}
+# create adjusted predictions
+lda.pred.adj <- ifelse(test.predicted.lda$posterior[, 2] > .20, "Yes", "No")
+qda.pred.adj <- ifelse(test.predicted.qda$posterior[, 2] > .20, "Yes", "No")
+
+# create new confusion matrices
+list(LDA_model = table(test$default, lda.pred.adj),
+     QDA_model = table(test$default, qda.pred.adj))
+  
+```
+
+We can also assess the ROC curve for our models as we did in the logistic regression tutorial and compute the AUC.
+
+```{r, message=FALSE, warning=FALSE, fig.align='center', fig.width=9, fig.height=4}
+# ROC curves
+library(ROCR)
+
+par(mfrow=c(1, 2))
+
+prediction(test.predicted.lda$posterior[,2], test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "LDA Model")
+
+prediction(test.predicted.qda$posterior[,2], test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot(main = "QDA Model")
+
+```
+
+
+```{r}
+# model 1 AUC
+prediction(test.predicted.lda$posterior[,2], test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+
+# model 2 AUC
+prediction(test.predicted.qda$posterior[,2], test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+```
+
+
+
+## Additional Resources
+
+This will get you up and running with logistic regression, LDA and QDA. Keep in mind that there is a lot more you can dig into so the following resources will help you learn more:
+
+- [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/index.html)
+- [The Elements of Statistical Learning](https://statweb.stanford.edu/~tibs/ElemStatLearn/)
+- [Applied Predictive Modeling](http://appliedpredictivemodeling.com/)
+
+
+[^islr]: This tutorial was built as a supplement to chapter 4, section 3 of [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/)
