@@ -14,6 +14,8 @@ get_tutorial(tutorial)
   \item \code{"Unsupervised"}: Principal Components Analysis & Cluster Analysis
   \item \code{"Linear Regression"}: Linear Regression
   \item \code{"Supervised Classification"}: Logistic Regression & Discriminant Analysis
+  \item \code{"Resampling"}: Leave-One-Out Cross-Validation, *k*-Fold Cross Validation, & Bootstrapping
+  \item \code{"Model Selection"}: Best Subset & Stepwise Selection for Linear Models
   }}
 }
 \description{

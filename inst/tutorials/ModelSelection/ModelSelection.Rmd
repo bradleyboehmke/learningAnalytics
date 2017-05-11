@@ -1,0 +1,770 @@
+---
+title: "Tutorial 6: Linear Model Selection"
+output: 
+  learnr::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+```{r setup, include=FALSE}
+# Packages
+library(tidyverse)  # data manipulation and visualization
+library(leaps)      # model selection functions
+library(learnr)
+
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, collapse=TRUE)
+
+# Load data 
+Hitters <- as_tibble(ISLR::Hitters)
+```
+
+## Linear Model Selection
+
+It is often the case that some or many of the variables used in a multiple regression model are in fact not associated with the response variable. Including such irrelevant variables leads to unnecessary complexity in the resulting model. Unfortunately, manually filtering through and comparing regression models can be tedious.  Luckily, several approaches exist for automatically performing feature selection or variable selection — that is, for identifying those variables that result in superior regression results.  This tutorial will cover a traditional approach known as *linear model selection*.[^islr]
+
+This tutorial primarily leverages the `Hitters` data provided by the `ISLR` package. This is a data set that contains number of hits, homeruns, RBIs, and other information for 322 major league baseball players.  We'll also use `tidyverse` for some basic data manipulation and visualization.  Most importantly, we'll use the `leaps` package to illustrate subset selection methods.
+
+Go ahead and get a feel for this data by checking out some summary statistics.
+
+```{r prepare-data, echo=FALSE}
+Hitters <- as_tibble(ISLR::Hitters)
+```
+
+```{r data, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data"}
+Hitters
+```
+
+```{r data-hint-1}
+# just a few approaches you could use
+summary(Hitters)
+GGally::ggpairs(Hitters)
+cor(Hitters[map_lgl(Hitters, is.numeric)], use = "complete.obs")
+```
+
+
+```{r missing, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the median salary (in thousands of dollars) in this data set?",
+  answer("536"),
+  answer("620"),
+  answer("425", correct = TRUE),
+  answer("329")
+),
+question("How many missing values are in this data set?",
+  answer("10"),
+  answer("59", correct = TRUE),
+  answer("22"),
+  answer("36")
+),
+question("Which variable is most correlated with salary?",
+  answer("Hits"),
+  answer("PutOuts"),
+  answer("CRuns"),
+  answer("CRBI", correct = TRUE)
+)
+)
+```
+
+
+Since there are missing values in our data we need to handle these appropriately prior to our statistical modeling.  There are several ways we can deal with missing values, including imputation.  However, for this tutorial we will simply remove these missing values.
+
+```{r missing_data, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data"}
+hitters <- na.omit(Hitters)
+```
+
+```{r missing_data-hint-1}
+nrow(hitters)
+```
+
+```{r missing-2, echo=FALSE}
+
+question("The original data set had 322 observations.  After removing all missing values how many observations are left?",
+  answer("322"),
+  answer("263", correct = TRUE),
+  answer("275"),
+  answer("301")
+)
+```
+
+There are two traditional approaches to perform linear model selection.  These include:
+
+1. **Best subset selection**: Finding the best combination of all predictor variables.
+2. **Stepwise selection**: When you have many predictor variables searching across all combinations becomes computationally burdomsome.  Stepwise selection approaches provide computationally efficient approaches for feature selection.
+
+Unfortunately, performing the linear model selection process is not a fully automated task.  We still need to compare the different model performance to identify which model(s) perform the best.  This tutorial first walks you through how to execute the traditional linear model selection approaches and then discusses how you can compare model performance. 
+
+
+## Best Subset Selection
+
+To perform best subset selection, we fit a separate least squares regression for each possible combination of the *p* predictor variables. That is, we fit all *p* models that contain exactly one predictor, all  $\big(\substack{p\\2}\big) = p(p−1)/2$ models that contain exactly two predictors, and so forth. We then look at all of the resulting models, with the goal of identifying the one that is best.
+
+The three-stage process of performing best subset selection includes:
+
+__Step 1:__ Let $M_0$ denote the null model, which contains no predictors. This model simply predicts the sample mean for each observation.
+
+__Step 2:__ For $k=1,2,\dots p$:
+
+- Fit all $\big(\substack{p\\k}\big)$ models that contain exactly *k* predictors. 
+- Pick the best among these $\big(\substack{p\\k}\big)$ models, and call it $M_k$. Here best is defined as having the smallest residual sum of squares (RSS), or equivalently largest $R^2$ value.
+
+__Step 3:__ Select a single best model from among $M_0, \dots , M_p$ using cross-validated prediction error, $C_p$, AIC, BIC, or adjusted $R^2$.
+
+
+Let's illustrate with our data. We can perform a best subset search using `regsubsets` (part of the `leaps` library), which identifies the best model for a given number of *k* predictors, where *best* is quantified using RSS. In essence, this is performing steps 1 & 2 above. The syntax is the same as the `lm` function. 
+
+```{r}
+best_subset <- regsubsets(Salary ~ ., data = hitters)
+```
+
+The `regsubsets` function returns a list-object with *lots* of information.  Initially, we can use the `summary` command to assess the best set of variables for each model size.  So, for a model with 1 variable we see that CRBI has an asterisk signalling that a regression model with *Salary ~ CRBI* is the best single variable model.  The best 2 variable model is *Salary ~ CRBI + Hits*. The best 3 variable model is *Salary ~ CRBI + Hits + PutOuts*. An so forth.
+
+```{r}
+summary(best_subset)
+```
+
+
+By default, `regsubsets` only reports results up to the best eight-variable model. But the `nvmax` option can be used in order to return as many variables as are desired. Go ahead and fit up to a 19-variable model by using the `regsubsets` function above but by including the following argument: `nvmax = 19`.
+
+```{r prepare-data-2, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+```
+
+```{r best-subset, exercise=TRUE, exercise.setup = "prepare-data-2"}
+
+```
+
+```{r best-subset-hint-1}
+best_subset <- regsubsets(Salary ~ ., data = hitters, nvmax = 19)
+```
+
+```{r best-subset-hint-2}
+summary(best_subset)
+```
+
+```{r best-subset-quiz, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which of the following variables are NOT in the best 10 variable model?",
+  answer("AtBat"),
+  answer("Hits"),
+  answer("CRuns"),
+  answer("CHmRun", correct = TRUE)
+),
+question("Which of the following variables are NOT in the best 13 variable model?",
+  answer("CRBI"),
+  answer("Years", correct = TRUE),
+  answer("CWalks"),
+  answer("PutOuts")
+),
+question("Which of the following variables are NOT in the best 19 variable model?",
+  answer("Hits"),
+  answer("PutOuts"),
+  answer("CRuns"),
+  answer("Trick question!", correct = TRUE),
+  correct = "There are only 19 predictor variables so the 19 variable model will include all predictor variables.",
+  incorrect = "There are only 19 predictor variables so the 19 variable model will include all predictor variables."
+)
+)
+```
+
+
+We can also get get the RSS, $R^2$, adjusted $R^2$, $C_p$, and BIC from the results which helps us to assess the *best* overall model; however, we'll illustrate this in the __*Comparing Models*__ section.  First, let's look at how to perform stepwise selection.
+
+
+## Stepwise Selection
+
+For computational reasons, best subset selection cannot be applied when the number of *p* predictor variables is large. Best subset selection may also suffer from statistical problems when *p* is large. The larger the search space, the higher the chance of finding models that look good on the training data, even though they might not have any predictive power on future data. Thus an enormous search space can lead to overfitting and high variance of the coefficient estimates.  For both of these reasons, stepwise methods, which explore a far more restricted set of models, are attractive alternatives to best subset selection when dealing with lots of predictor variables.
+
+### Forward Stepwise
+
+*Forward stepwise* selection begins with a model containing no predictors, and then adds predictors to the model, one-at-a-time, until all of the predictors are in the model. In particular, at each step the variable that gives the __*greatest additional improvement*__ to the fit is added to the model.
+
+The three-stage process of performing forward stepwise selection includes:
+
+__Step 1:__ Let $M_0$ denote the null model, which contains no predictors. This model simply predicts the sample mean for each observation.
+
+__Step 2:__ For $k=0, \dots, p-1$:
+
+- Consider all *p − k* models that augment the predictors in $M_k$ with one additional predictor.
+- Choose the best among these *p − k* models, and call it $M_{k+1}$. Here best is defined as having smallest RSS or highest $R^2$.
+
+__Step 3:__ Select a single best model from among $M_0, \dots , M_p$ using cross-validated prediction error, $C_p$, AIC, BIC, or adjusted $R^2$.
+
+
+We can perform forward stepwise using `regsubsets` by setting `method = "forward"`:
+
+
+```{r}
+forward <- regsubsets(Salary ~ ., hitters, method = "forward")
+```
+
+Go ahead and look at the summary of this model.  
+
+
+```{r forward-stepwise, exercise=TRUE, exercise.setup = "prepare-data-2"}
+forward <- regsubsets(Salary ~ ., hitters, method = "forward")
+```
+
+```{r forward-stepwise-hint-1}
+summary(forward)
+```
+
+```{r forward-quiz, echo=FALSE}
+question("Which variable is in all the models?",
+  answer("AtBat"),
+  answer("CRBI", correct = TRUE),
+  answer("Hits"),
+  answer("CHmRun"),
+  correct = "CRBI is the variable that provides the largest improvement over the null model (no predictors - simply predicts the mean). Therefore, CRBI is the first variable to be added and remains in all ensuing models.",
+  incorrect = "CRBI is the variable that provides the largest improvement over the null model (no predictors - simply predicts the mean). Therefore, CRBI is the first variable to be added and remains in all ensuing models."
+)
+```
+
+
+### Backward Stepwise
+
+*Backward stepwise* selection provides an efficient alternative to best subset selection. However, unlike forward stepwise selection, it begins with the full least squares model containing all *p* predictor variables, and then iteratively removes the __*least useful*__ predictor, one-at-a-time.
+
+The three-stage process of performing forward stepwise selection includes:
+
+__Step 1:__ Let $M_p$ denote the full model, which contains all *p* predictors.
+
+__Step 2:__ For $k=p, p-1, \dots, 1$:
+
+- Consider all *k* models that contain all but one of the predictors in $M_k$, for a total of *k − 1* predictors.
+- Choose the best among the *k* models, and call it $M_{k-1}$. Here best is defined as having smallest RSS or highest $R^2$.
+
+__Step 3:__ Select a single best model from among $M_0, \dots , M_p$ using cross-validated prediction error, $C_p$, AIC, BIC, or adjusted $R^2$.
+
+We can perform backward stepwise using `regsubsets` by setting `method = "backward"`:
+
+```{r}
+backward <- regsubsets(Salary ~ ., hitters, method = "backward")
+```
+
+Go ahead and look at the summary of this model.  
+
+
+```{r backward-stepwise, exercise=TRUE, exercise.setup = "prepare-data-2"}
+backward <- regsubsets(Salary ~ ., hitters, method = "backward")
+```
+
+```{r backward-stepwise-hint-1}
+summary(backward)
+```
+
+```{r backward-quiz, echo=FALSE}
+question("Which variable is in all the models?",
+  answer("AtBat"),
+  answer("CRuns", correct = TRUE),
+  answer("Hits"),
+  answer("CRBI")
+)
+```
+
+
+### Additional Notes
+
+It's important to understand that best subset, forward stepwise, and backward stepwise can produce different "best" models for each number of predictor variables.  I can be useful to perform all three to identify multiple "best" models and compare.  In practice, best subset is often preferred when the number of predictor variables is reasonable.  When the number of predictor variables are too large, then comparing forward and backward stepwise outputs is useful; however, to perform backward stepwise the number of observations (*n*) must be larger than the number of predictor variables (*p*) so that the full model can be fit.
+
+Go ahead and perform best subset, forward stepwise, and backward stepwise but set `nvmax = 19` so that you can assess how the results differ across all predictor variables.  Look for predictor variables that are consistently included in optimal models.
+
+```{r prepare-data-3, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+```
+
+```{r both, exercise=TRUE, exercise.setup = "prepare-data-3"}
+
+```
+
+```{r both-hint-1}
+# best subset
+best_subset <- regsubsets(Salary ~ ., data = hitters, nvmax = 19)
+summary(best_subset)
+```
+
+```{r both-hint-2}
+# forward stepwise
+forward <- regsubsets(Salary ~ ., data = hitters, nvmax = 19, method = "forward")
+summary(forward)
+```
+
+```{r both-hint-3}
+# backward stepwise
+backward <- regsubsets(Salary ~ ., data = hitters, nvmax = 19, method = "backward")
+summary(backward)
+```
+
+
+Also, although we do not go into the details in this tutorial, there are a number hybrid versions of forward and backward stepwise selection procedures available.  These hybrid approaches add and remove variables sequentially (analogous to forward and backward selection); however, after adding each new variable, the method may also remove any variables that no longer provide an improvement in the model fit. Such an approach attempts to more closely mimic best subset selection while retaining the computational advantages of forward and backward stepwise selection.
+
+
+## Comparing Results
+
+So far, I've illustrated how to perform the best subset and stepwise procedures.  Now let's discuss how to compare all the models that these approaches output in order to identify the *best* model.  That is, let's perform step 3 discussed in each of the 3-stage processes outlined above (recall step 3 in each method is *"Select a single best model from among $M_0, \dots , M_p$ using cross-validated prediction error, $C_p$, AIC, BIC, or adjusted $R^2$"*).
+
+In order to select the best model with respect to test error, we need to estimate this test error. There are two common approaches:
+
+1. We can indirectly estimate test error by making an adjustment to the training error to account for the bias due to overfitting.
+2. We can directly estimate the test error, using either a validation set approach or a cross-validation approach.
+
+We consider both of these approaches below.
+
+### 1. Indirectly Estimating Test Error with $C_p$, AIC, BIC, and Adjusted $R^2$
+
+When performing the best subset or stepwise approaches, the $M_0, \dots , M_p$ models selected are selected based on the fact that they minimize the training set mean square error (MSE).[^rss] Because of this and the fact that using the training MSE and $R^2$ will bias our results we should not use these statistics to determine which of the $M_0, \dots , M_p$ models is *"the best"*. 
+
+However, a number of techniques for adjusting the training error for the model size are available. These approaches can be used to select among a set of models with different numbers of variables.  These include:
+
+Statistic                  |   Objective   |   Equation
+---------------------------|---------------|------------
+$C_p$  | Minimize |  $C_p = \frac{1}{n}(RSS + 2d\hat\sigma)$
+Akaike information criterion (AIC) | Minimize | $AIC = \frac{1}{n\hat{\sigma}^2}(RSS + 2d \hat{\sigma}^2 )$
+Bayesian information criterion (BIC) | Minimize | $BIC = \frac{1}{n}(RSS + log(n)d \hat{\sigma}^2 )$
+adjusted $R^2$ | Maximize | $\text{adj } R^2 = 1 - \frac{RSS/n-d-1}{TSS/(n-1)}$
+
+where *d* is the number of predictors and $\sigma^2$ is an estimate of the variance of the error ($\epsilon$) associated with each response measurement in a regression model. Each of these statistics adds a penalty to the training RSS in order to adjust for the fact that the training error tends to underestimate the test error.[^diag] Clearly, the penalty increases as the number of predictors in the model increases.  
+
+Therefore, these statistics provide an unbiased estimate of test MSE.  If we perform our model using a training vs. testing validation approach we can use these statistics to determine the preferred model.  These statistics are contained in the output provided by the `regsubsets` function.  Let's extract this information and plot them.  But first, do you remember how to split your data into a training vs testing data set?  Go ahead and see if you can:
+
+1. set random seed generator to `set.seed(1)`
+2. split the `hitters` data into training (60%) and testing (40%) data sets
+3. perform best subset using `regsubsets` and `nvmax = 19`
+
+```{r data-split, exercise=TRUE, exercise.setup = "prepare-data-3"}
+
+```
+
+```{r data-split-hint-1}
+# create training - testing data
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+```
+
+```{r data-split-hint-2}
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+summary(best_subset)
+```
+
+
+```{r data-split-quiz, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("How many observations are in your training set?",
+  answer("158"),
+  answer("159"),
+  answer("160"),
+  answer("161", correct = TRUE)
+),
+question("Which variables are in the best 3 variable model?",
+  answer("Runs", correct = TRUE),
+  answer("CAtBat", correct = TRUE),
+  answer("CHits", correct = TRUE),
+  answer("CRBI")
+)
+)
+```
+
+As I said we can extract several statistics from the `regsubsets` function output.  For example, if I want to extract the $R^2$ value for the best models at each $p = 1, 2,\dots, 19$ predictor variables I can index the summary of the `regsubsets` output with `$rsq`.  This will provide the $R^2$ value for each of the 19 best performing models.  The $R^2$ for the best 1 predictor variable model is 0.319, $R^2$ for the best 2 predictor variables model is 0.531, etc.
+
+```{r}
+# create training - testing data
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+results <- summary(best_subset)
+
+# extract R^2 values
+results$rsq
+```
+
+If we wanted to we could plot this with R's base plotting to see the $R^2$ performance across all 19 models.  This illustrates a sharp improvement in $R^2$ values when going from a single predictor variable model to using a 4 predictor variable model but then begins to level off.
+
+```{r}
+plot(results$rsq, type = "b")
+```
+
+We can get the same information for the adjusted training error statistics noted above.  Go ahead and see if you can extract and plot the $C_p$, BIC, and Adjusted $R^2$ statistics from the `results` object.  
+
+```{r prepare-data-4, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+
+# create training - testing data
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+```
+
+```{r training-error, exercise=TRUE, exercise.setup = "prepare-data-4"}
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+results <- summary(best_subset)
+```
+
+```{r training-error-hint-1}
+results$cp
+results$bic
+results$adjr2
+```
+
+```{r training-error-hint-2}
+plot(results$cp, type = "b")
+plot(results$bic, type = "b")
+plot(results$adjr2, type = "b")
+```
+
+
+Sometimes its nice to compare all of these statistics at the same time. We can do that by combining these statistics into a `tibble` and then plotting them with `ggplot`. Here we see that our results identify slightly different models that are considered the best.  The adjusted $R^2$ statistic suggests the 10 variable model is preferred, the BIC statistic suggests the 4 variable model, and the $C_p$ suggests the 8 variable model.  Note that the BIC statistic places a heavier penalty on models with many variables, and hence, results in the selection of smaller models than $C_p$ and adjusted $R^2$.  Regardless, we now understand that the optimal model likely includes 4-10 variables.  
+
+```{r, fig.align='center', fig.width=7, fig.height=3}
+tibble(predictors = 1:19,
+       adj_R2 = results$adjr2,
+       Cp = results$cp,
+       BIC = results$bic) %>%
+  gather(statistic, value, -predictors) %>%
+  ggplot(aes(predictors, value, color = statistic)) +
+  geom_line(show.legend = F) +
+  geom_point(show.legend = F) +
+  facet_wrap(~ statistic, scales = "free")
+```
+
+Note that if its hard to identify difinitively, with plotting, which model is the "best" we can use the `which.x` functions.  The code below identifies that the 10 variable model maximizes the adjusted $R^2$ value.  Go ahead and change the code below to identify the model that minimizes the BIC and $C_p$ values.
+
+```{r prepare-data-5, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+
+# create training - testing data
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+results <- summary(best_subset)
+```
+
+```{r which-x, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-5"}
+which.max(results$adjr2)
+```
+
+```{r which-x-hint-1}
+which.min(results$bic)
+which.min(results$cp)
+```
+
+If we want to understand which variables are included in these "best" models, along with the coefficient values, we can use the `coef` function.  Below you see the variables and the coefficients that are in the 10 variable model, which had the highest adjusted $R^2$ value.  Go ahead and check out the variables and coefficients that are in the models that minimize the BIC and $C_p$ values.
+
+```{r coef, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-5"}
+# 10 variable model
+coef(best_subset, 10)
+```
+
+```{r coef-hint-1}
+coef(best_subset, 4)
+coef(best_subset, 8)
+```
+
+```{r coef-quiz, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which variable is NOT in the 4 variable model (which minimizes BIC)?",
+  answer("Runs"),
+  answer("CHits"),
+  answer("PutOuts"),
+  answer("CHmRun", correct = TRUE)
+),
+question("Which variable is NOT in the 8 variable model (which minimizes $C_p$)?",
+  answer("Hits"),
+  answer("CWalks"),
+  answer("PutOuts"),
+  answer("CRBI", correct = TRUE)
+)
+)
+```
+
+
+When all estimated test error statistic converge on the same model it is a pretty good signal.  However, this rarely happens so we are left with deciding which is the best model even through our statistics suggest several good models.  This is one more reason to directly estimate the test error using the test data set or by using cross-validation.
+
+### 2. Directly Estimating Test Error
+
+Let's go ahead and compute the validation set error for the best model of each model size. We first make a model matrix from the test data. The `model.matrix` function is used in many regression packages for building an "X" matrix from data.  Go ahead and take a look at the `test_m` model matrix object and compare it to the `test` data set.  They are very similar; however, the model matrix includes an intercept variable and converts the factor variables (i.e. League, Division) to the dummy variables that would be used in the regression modeling.  
+
+```{r, echo=FALSE}
+test_m <- model.matrix(Salary ~ ., data = test)
+```
+
+```{r prepare-data-6, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+
+# create training - testing data
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+
+test_m <- model.matrix(Salary ~ ., data = test)
+```
+
+```{r model-matrix, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-6"}
+test_m <- model.matrix(Salary ~ ., data = test)
+```
+
+```{r model-matrix-hint-1}
+as_tibble(test_m) # wrap with as_tibble to make it easier to view
+test
+```
+
+Now we can loop through each model size (i.e. 1 variable, 2 variables,..., 19 variables) and extract the coefficients for the best model of that size, multiply them into the appropriate columns of the test model matrix to form the predictions, and compute the test MSE.
+
+```{r, fig.align='center', fig.width=6, fig.height=4}
+# create empty vector to fill with error values
+validation_errors <- vector("double", length = 19)
+
+# loop to compute test errors for models 1-19
+for(i in 1:19) {
+  # extract coefficients for model size i
+  coef_x <- coef(best_subset, id = i) 
+  
+  # predict salary using matrix algebra
+  pred_x <- test_m[ , names(coef_x)] %*% coef_x
+  
+  # compute test error btwn actual & predicted salary
+  validation_errors[i] <- mean((test$Salary - pred_x)^2)  
+}
+
+# plot validation errors
+plot(validation_errors, type = "b")
+```
+
+Here, we actually see that the 1 variable model produced by the best subset approach produces the lowest test MSE!  If we repeat this using a different random value seed, we will get a slightly different model that is the "best". However, if you recall from the __*Resampling Methods*__ tutorial, this is to be expected when using a training vs. testing validation approach.  Go ahead and change the `set.seed` value below and see how the "best" model changes for each run.
+
+```{r prepare-data-7, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+```
+
+```{r change-seed, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-7", fig.align='center', fig.width=6, fig.height=4}
+# CHANGE THIS VALUE AND HIT "RUN"
+set.seed(1)
+
+# create training - testing data
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+
+# create model matrix
+test_m <- model.matrix(Salary ~ ., data = test)
+
+# create empty vector to fill with error values
+validation_errors <- vector("double", length = 19)
+
+# loop to compute test errors
+for(i in 1:19) {
+  coef_x <- coef(best_subset, id = i) 
+  pred_x <- test_m[ , names(coef_x)] %*% coef_x
+  validation_errors[i] <- mean((test$Salary - pred_x)^2)  
+}
+
+# plot validation errors
+plot(validation_errors, type = "b")
+```
+
+
+A more robust approach is to perform __*cross validation*__.  But before we do, let's turn our our approach above for computing test errors into a function.  Our function pretty much mimics what we did above. The only complex part is how we extracted the formula used in the call to `regsubsets`.  On your own time I suggest you work through this line-by-line to understand what each step is doing; but for now just understand that provided `regsubsets` object, data, and model (id) number it will compute the MSE.
+
+```{r}
+predict.regsubsets <- function(object, newdata, id) {
+  form <- as.formula(object$call[[2]]) 
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  mat[, xvars] %*% coefi
+  }
+```
+
+We now try to choose among the models of different sizes using k-fold cross-validation. This approach is somewhat involved, as we must perform best subset selection *within each of the k training sets*.  First, we create a vector that allocates each observation to one of *k = 10* folds, and we create a matrix in which we will store the results.
+
+
+```{r}
+k <- 10
+set.seed(1)
+folds <- sample(1:k, nrow(hitters), replace = TRUE)
+cv_errors <- matrix(NA, k, 19, dimnames = list(NULL, paste(1:19)))
+```
+
+Now we write a for loop that performs cross-validation. In the *j*th fold, the elements of folds that equal *j* are in the test set, and the remainder are in the training set. We make our predictions for each model size, compute the test errors on the appropriate subset, and store them in the appropriate slot in the matrix `cv_errors`.
+
+```{r cross-validation, eval=FALSE}
+for(j in 1:k) {
+  
+  # perform best subset on rows not equal to j
+  best_subset <- regsubsets(Salary ~ ., hitters[folds != j, ], nvmax = 19)
+  
+  # perform cross-validation
+  for( i in 1:19) {
+    pred_x <- predict.regsubsets(best_subset, hitters[folds == j, ], id = i)
+    cv_errors[j, i] <- mean((hitters$Salary[folds == j] - pred_x)^2)
+    }
+  }
+```
+
+This has given us a 10×19 matrix, of which the (*i,j*)th element corresponds to the test MSE for the *i*th cross-validation fold (*k = 1, k = 2,..., k = 10*) for the best *j*-variable model (*p (predictor variables) = 1, p = 2,..., p = 19*). Or in laymen terms, column one contains the test MSE for the best single predictor model across all 10 k-folds, column 2 contains the test MSE for the best 2-predictor variable model across all 10 k-folds, etc.
+
+Go ahead and check out the `cv_errors` matrix.  
+
+```{r eval=FALSE, echo=FALSE}
+# this is what I used to create cv_errors
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+predict.regsubsets <- function(object, newdata, id ,...) {
+  form <- as.formula(object$call[[2]]) 
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  mat[, xvars] %*% coefi
+}
+k <- 10
+set.seed(1)
+folds <- sample(1:k, nrow(hitters), replace = TRUE)
+cv_errors <- matrix(NA, k, 19, dimnames = list(NULL, paste(1:19)))
+for(j in 1:k) {
+  
+  # perform best subset on rows not equal to j
+  best_subset <- regsubsets(Salary ~ ., hitters[folds != j, ], nvmax = 19)
+  
+  # perform cross-validation
+  for( i in 1:19) {
+    pred_x <- predict.regsubsets(best_subset, hitters[folds == j, ], id = i)
+    cv_errors[j, i] <- mean((hitters$Salary[folds == j] - pred_x)^2)
+    }
+}
+cv_errors <- as_tibble(cv_errors)
+```
+
+```{r prepare-data-8, echo=FALSE}
+cv_errors <- readr::read_rds("data/cv_errors.rds")
+```
+
+```{r cv_errors, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-8"}
+cv_errors
+```
+
+```{r cv_errors-quiz, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("What is the test MSE for the best 2 predictor variable model for the 5th *k*-fold?",
+  answer("141,652.61"),
+  answer("86,881.88"),
+  answer("136,168.29"),
+  answer("79,595.09", correct = TRUE),
+  correct = "The 2 predictor variable MSEs are in column two and the 5th k-fold is in row 5.",
+  incorrect = "The 2 predictor variable MSEs are in column two and the 5th k-fold is in row 5."
+),
+question("What is the test MSE for the best 8 predictor variable model for the 3rd *k*-fold?",
+  answer("146,028.36", correct = TRUE),
+  answer("77,319.95"),
+  answer("131,999.41"),
+  answer("137,609.30"),
+  correct = "The 8 predictor variable MSEs are in column 8 and the 3rd k-fold is in row 3.",
+  incorrect = "The 8 predictor variable MSEs are in column 8 and the 3rd k-fold is in row 3."
+)
+)
+```
+
+If we compute the mean for each column we calculate the average test MSE for each 1, 2, 3,..., 19 predictor model across all *k*-folds.  Go ahead and do this.
+
+```{r avg_cv_errors, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-8", fig.align='center', fig.width=6, fig.height=4}
+cv_errors
+```
+
+```{r avg_cv_errors-hint-1}
+mean_cv_errors <- colMeans(cv_errors)
+```
+
+```{r avg_cv_errors-hint-2}
+plot(mean_cv_errors, type = "b")
+```
+
+```{r avg_cv_errors-hint-3}
+which.min(mean_cv_errors)
+min(mean_cv_errors)
+```
+
+```{r avg_cv_errors-quiz, echo=FALSE}
+quiz(caption = "Knowledge Check",
+question("Which model has the lowest average test MSE across all 10 k-folds?",
+  answer("1 predictor variable model"),
+  answer("7 predictor variable model"),
+  answer("11 predictor variable model", correct = TRUE),
+  answer("16 predictor variable model")
+),
+question("What is the average test MSE for this best performing model?",
+  answer("140,196.8"),
+  answer("125,153.8", correct = TRUE),
+  answer("146,841.3"),
+  answer("128,273.5")
+)
+)
+```
+
+
+So, we see that our more robust cross-validation approach selects an 11-variable model.  We can now perform best subset selection on the full data set in order to obtain the 11-variable model. Go ahead and perform best subset selection and identify the variables and coefficients for this "best" model.
+
+```{r prepare-data-9, echo=FALSE}
+hitters <- as_tibble(ISLR::Hitters) %>% na.omit()
+```
+
+```{r final_model, exercise=TRUE, exercise.setup = "prepare-data-9"}
+
+```
+
+```{r final_model-hint-1}
+# perform best subset selection
+final_best <- regsubsets(Salary ~ ., data = hitters , nvmax = 19)
+```
+
+```{r final_model-hint-2}
+# identify the variables and coefficients
+coef(final_best, 11)
+```
+
+Now we've identified that the optimal model to predict salaries with this current data set is an 11 variable model that includes:
+
+1. AtBat
+2. Hits
+3. Walks
+4. CAtBat
+5. CRuns
+6. CRBI
+7. CWalks
+8. League
+9. Division
+10. PutOuts
+11. Assists
+
+We can now proceed with developing this model with the normal `lm` function and proceed with predicting salaries on future data sets with `predict` as illustrated in our first linear regression tutorial.  I'll leave this for you to do on your own time!
+
+## Additional Resources
+
+This will get you started with approaches for performing linear model selection; however, understand that there are other approaches for more sophisticated model selection procedures. The following resources will help you learn more:
+
+- [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/)
+- [Applied Predictive Modeling](http://appliedpredictivemodeling.com/)
+- [Elements of Statistical Learning](https://statweb.stanford.edu/~tibs/ElemStatLearn/)
+
+
+
+
+[^islr]: This tutorial was built as a supplement to section 6.1 of [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/).
+[^rss]: Technically, it minimizes the RSS but recall that $MSE = RSS/n$ so MSE is minimized by association.
+[^diag]: These statistics differ for important reasons. Furthermore, some of these statistics are motivated more by statistical theory than others.  For more information behind these statistics I would suggest starting by reading section 6.1 of [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/).
