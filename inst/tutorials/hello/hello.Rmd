@@ -9,19 +9,29 @@ runtime: shiny_prerendered
 library(learnr)
 ```
     
+
     
 ## Welcome
 
-Welcome to this set of tutorials focused on providing structured learning approach. Through these tutorials you will not only learn the fundamental analytic applications, but you will also apply and perform knowledge checks as you progress through the tutorials.  
+Welcome to this set of tutorials focused on providing a structured learning approach. Through these tutorials you will not only learn the fundamental analytic applications, but you will also apply and perform knowledge checks as you progress through the tutorials. This is accomplished through:
 
-This initial tutorial is meant to assess the functionality of your computer setup.
+1. Narrative, figures, illustrations, and equations.
+2. Code exercises (R code chunks that you can edit and execute directly).
+3. Knowledge check (aka quiz) questions.
+
+This initial tutorial is meant to assess the functionality of your computer setup. First, your tutorial should be organized with a floating table of contents to the left of the content as in the below image.  If this is not the case and your table of contents overlaps the narrative content then you need to update your `rmarkdown` package to the latest version.
+
+<br>
+
+<img src="images/example.png" alt="Example" style="width: 1000px;"/>
+
 
 ## System Requirements
 
 The following outlines system requirements to make sure these tutorials operate correctly:
 
-- R v3.4.0 (2017-04-21) or greater
-- RStudio v1.0.143 or greater
+- [R v3.4.0 (2017-04-21) or greater](https://cran.r-project.org/)
+- [RStudio v1.0.143 or greater](https://www.rstudio.com/products/rstudio/download/)
 - Internet connection
 - These tutorials depend on the following packages.  These all should have been installed when you downloaded this package; however, you might want to confirm that they all downloaded successfully.
 
@@ -36,7 +46,11 @@ install.packages(pkgs)
 
 ## Equation Display
 
-Throughout many tutorials you will see mathematical notation.  The equations leverage mathjax and you should see them in equation form (i.e. $Y = \beta_0 + \beta_1X + \epsilon$).  However, if the equation is showing up looking like LaTex code (i.e. Y = \beta_0 + \beta_1X + \epsilon) then your mathjax conversion is not happening correctly.  First, I would ensure you are connected to the internet.  Second, if you are having problems with MathJax rendering using Safari, try a different browser such as Google Chrome.
+Throughout many tutorials you will see mathematical notation.  The equations leverage mathjax and you should see them in equation form (i.e. $Y = \beta_0 + \beta_1X + \epsilon$).  However, if the equation is showing up looking like LaTex code (i.e. Y = \beta_0 + \beta_1X + \epsilon) then your mathjax conversion is not happening correctly. If this is the case, do the following:  
+
+1. Ensure you are connected to the internet.  
+2. If it continues try a different browser such as Google Chrome (I've had some problems with MathJax rendering successfully in Safari).
+3. If it still is a problem please report an issue [here](https://github.com/bradleyboehmke/learningAnalytics/issues) (be sure to include specifics about your operating system and software versions).
 
 ## Running Code
 
@@ -61,5 +75,18 @@ question("Do you love R?",
 ```
 
 
+## HTML Tables
 
+Data frame outputs are often converted to HTML tables.  Depending on your browser, these tables may not initially appear (however you will see a table outline where the table would be).  If this happens just refresh your browser and the table should generate.
+
+```{r}
+mtcars
+```
+
+## Reporting Problems
+
+If you continue to have persistent problems that you cannot resolve please do not hestitate to report the issue at  [https://github.com/bradleyboehmke/learningAnalytics/issues](https://github.com/bradleyboehmke/learningAnalytics/issues).
+
+Thanks and I hope you enjoy the tutorials!  
+Brad
 
