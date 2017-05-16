@@ -29,3 +29,5 @@ Imports: learnr,
     leaps,
     ggplot2movies
 RoxygenNote: 6.0.1
+URL: https://github.com/bradleyboehmke/learningAnalytics
+BugReports: https://github.com/bradleyboehmke/learningAnalytics/issues
