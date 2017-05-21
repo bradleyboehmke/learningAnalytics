@@ -1,0 +1,473 @@
+---
+title: "Case Study 4: Predicting Stock Market Movements"
+output: 
+  rtutor::tutorial:
+    progressive: true
+runtime: shiny_prerendered
+---
+
+<script type="text/javascript" async
+    src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+
+```{r setup, include=FALSE}
+# Packages
+library(tidyverse)  # data manipulation and visualization
+library(modelr)     # provides easy pipeline modeling functions
+library(broom)      # helps to tidy up model outputs
+library(rtutor)
+library(caret)
+library(MASS)
+```
+
+## Setting
+
+Currently, you have your retirement investments managed by a professional broker.  However, recently your friends have been discussing how they use online services that allow them to self-direct their investments (i.e. E-Trade, Fidelity, Ameritrade).  Moreover, they have all started to apply a highly technical trading technique that has them betting that the market will increased based on the previous days’ returns. They keep asking you to get in on the excitement but you remain skeptical and decide to do some analysis to test this theory.
+
+Using stock market data (`ISLR::Smarket`), use logistic regression and linear/quadratic discriminant analysis to analyze how well you can predict if the market will increase or decrease based on the percentage returns for prior trading days.  This data set consists of percentage returns for the S&P 500 stock index over 1,250 days, from the beginning of 2001 until the end of 2005. For each date, percentage returns for each of the five previous trading days, *Lag1* through *Lag5* are provided. In addition *Volume* (the number of shares traded on the previous day, in billions), *Today* (the percentage return on the date in question) and *Direction* (whether the market was Up or Down on this date) are provided.
+
+```{r}
+(market <- head(ISLR::Smarket))
+```
+
+Go ahead and do some preliminary exploratory analysis on this data.
+
+```{r prepare-data-12, echo=FALSE}
+market <- head(ISLR::Smarket)
+```
+
+```{r smarket, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-12", warning=FALSE}
+market
+```
+
+```{r smarket-hint-1}
+summary(market)
+GGally::ggpairs(market)
+```
+
+## Prepare Data
+
+Let's model this data with logistic regression, LDA, and QDA to assess how well each model does in predicting the direction of the stock market based on previous day returns.  But first we need to prepare our data.  Go ahead and use the observations from 2001-2004 as the training data sets and then use the observations from 2005 as the testing data.  In essence, we're going to see if we can train a model on 2001-2004 data to accurately predict market changes in 2005.  Go ahead and create the `train` and `test` data sets.
+
+```{r market-train, exercise=TRUE, exercise.setup = "prepare-data-12", warning=FALSE}
+
+```
+
+```{r market-train-hint-1}
+# create your training data set
+train <- subset(ISLR::Smarket, Year < 2005)
+```
+
+```{r market-train-hint-2}
+# create your testing data set
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+```{r market-train-questions, echo=FALSE}
+quiz(caption = "Knowledge Check",
+  question("How many observations are in your training data set?",
+           answer("1,038"),
+           answer("521"),
+           answer("998", correct = TRUE),
+           answer("736"),
+           incorrect = "Incorrect.  Use nrow(train) to get the number of observations in your training data set."
+           ),
+  question("How many observations are in your testing data set?",
+           answer("368"),
+           answer("252", correct = TRUE),
+           answer("117"),
+           answer("834"),
+           incorrect = "Incorrect.  Use nrow(test) to get the number of observations in your testing data set."
+           )
+)
+```
+
+
+```{r, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+## Logistic Regression
+
+With your training and test data sets established, fit a logistic regression model to the training data (`Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume`).  Look at the summary of your model.  Does it look convincing?
+
+```{r prepare-data-13, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, 
+               data = train,
+               family = binomial)
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+```{r market-glm, exercise=TRUE, exercise.setup = "prepare-data-13", warning=FALSE}
+
+```
+
+```{r market-glm-hint-1}
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, 
+               data = train,
+               family = binomial)
+```
+
+```{r market-glm-hint-2}
+summary(glm.fit)
+```
+
+```{r market-glm-questions, echo=FALSE}
+quiz(
+  question("Which variables are statistically significant?",
+           answer("Lag1"),
+           answer("Lag2"),
+           answer("Lag3"),
+           answer("Lag4"),
+           answer("Lag5"),
+           answer("Volume"),
+           answer("None", correct = TRUE),
+           incorrect = "Incorrect.  Check out the p-values, they are all greater than 0.05.",
+           correct = "Correct.  All variables have p-values > 0.05"
+           ),
+  question("How much does this model reduce the residual deviance compared to the Null deviance?",
+           answer("110"),
+           answer("2", correct = TRUE),
+           answer("86"),
+           answer("4"),
+           correct = "Correct. In other words, this model does not do much better than a model that only uses an intercept (average) to predict."
+           )
+)
+```
+
+Although this model is not good at all, let's use it to compute the predictions for 2005 and compare them to the actual movements of the market over that time period with a confusion matrix.  In this next code chunk, perform the following:
+
+1. Use `predict` to compute predictions for the 2005 test data
+2. Create the confusion matrix
+3. Calculate the overall error rate
+4. Calculate the precision of our model
+
+```{r market-glm-predict, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-13", warning=FALSE}
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, 
+               data = train,
+               family = binomial)
+
+# compute predictions
+
+# create confusion matrix
+
+# calculate overall error rate
+
+# calculate precision
+
+```
+
+```{r market-glm-predict-hint-1}
+# compute predictions
+glm.probs <- predict(glm.fit, test, type="response")
+```
+
+```{r market-glm-predict-hint-2}
+# create confusion matrix
+table(test$Direction, ifelse(glm.probs > 0.5, "Up", "Down"))
+```
+
+```{r market-glm-predict-hint-3}
+# calculate overall error rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down") != test$Direction)
+```
+
+```{r market-glm-predict-hint-4}
+# calculate precision
+44 / (97 + 44)
+```
+
+Remember that using predictors that have no relationship with the response tends to cause a deterioration in the test error rate (since such predictors cause an increase in variance without a corresponding decrease in bias), and so removing such predictors may in turn yield an improvement. Assess this model using the `caret::varImp` function to see which two variables are considered "most important".
+
+
+```{r market-glm-varimp, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-13", warning=FALSE}
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, 
+               data = train,
+               family = binomial)
+
+# compute importance of variables
+
+```
+
+```{r market-glm-varimp-solution}
+# compute importance of variables
+caret::varImp(glm.fit)
+```
+
+You should find that the variables that appear to have the highest importance rating are *Lag1* and *Lag2*. Re-fit the logistic regression model with just these two variables and reassess performance.  Do you see much improvement?
+
+```{r prepare-data-14, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+```{r market-glm-refit, exercise=TRUE, exercise.setup = "prepare-data-14", warning=FALSE}
+# re-fit logistic regression model
+
+```
+
+```{r market-glm-refit-solution}
+# re-fit logistic regression model
+glm.fit <- glm(Direction ~ Lag1 + Lag2, 
+               data = train,
+               family = binomial)
+
+summary(glm.fit)
+```
+
+We **don’t** see much improvement within our model summary do we?  What about our prediction accuracy?  Do we see much improvement?  
+
+```{r market-glm-refit-predict, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-14", warning=FALSE}
+glm.fit <- glm(Direction ~ Lag1 + Lag2, 
+               data = train,
+               family = binomial)
+
+# compute predictions
+
+# create confusion matrix
+
+# calculate overall error rate
+
+# calculate precision
+
+```
+
+```{r market-glm-refit-predict-hint-1}
+# compute predictions
+glm.probs <- predict(glm.fit, test, type="response")
+```
+
+```{r market-glm-refit-predict-hint-2}
+# create confusion matrix
+table(test$Direction, ifelse(glm.probs > 0.5, "Up", "Down"))
+```
+
+```{r market-glm-refit-predict-hint-3}
+# calculate overall error rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down") != test$Direction)
+```
+
+```{r market-glm-refit-predict-hint-4}
+# calculate precision
+106 / (35 + 106)
+```
+
+Yes, our prediction classification rates have improved slightly. Our error rate has decreased to 44% (accuracy = 56%) and our precision has increased to 75%. However, its worth noting that the market moved up 56% of the time in 2005 and moved down 44% of the time. Thus, the logistic regression approach is no better than a naive approach!
+
+## Linear Discriminant Analysis
+
+Go ahead and perform LDA on the stock market data.  Fit the model such that `Direction ~ Lag1 + Lag2`.  Check out the model summary.
+
+
+```{r prepare-data-14a, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+```{r market-lda-fit, exercise=TRUE, exercise.setup = "prepare-data-14a", warning=FALSE}
+# fit model
+
+# check out the model summary
+
+```
+
+```{r market-lda-fit-hint-1}
+# fit model
+lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train)
+```
+
+```{r market-lda-fit-hint-2}
+# check out the model summary
+lda.fit
+```
+
+Our summary shows that our prior probabilities of market movement are 49% (down) and 51% (up).  The group means indicate that there is a tendency for the previous 2 days’ returns to be negative on days when the market increases, and a tendency for the previous days’ returns to be positive on days when the market declines. 
+
+Let's go ahead and predict with our LDA model and assess the confusion matrix to see if our prediction rates differ from those produced by logistic regression.  
+
+```{r market-lda-pred, exercise=TRUE, exercise.setup = "prepare-data-14a", warning=FALSE}
+lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train)
+
+# compute predictions
+
+# create confusion matrix
+
+# calculate overall error rate
+
+# calculate precision
+```
+
+
+```{r market-lda-pred-hint-1}
+# compute predictions
+test.predicted.lda <- predict(lda.fit, newdata = test)
+```
+
+```{r market-lda-pred-hint-2}
+# create confusion matrix
+table(test$Direction, test.predicted.lda$class)
+```
+
+```{r market-lda-pred-hint-3}
+# calculate overall error rate
+mean(test.predicted.lda$class != test$Direction)
+```
+
+```{r market-lda-pred-hint-4}
+# calculate precision
+106 / (35 + 106)
+```
+
+The overall error and the precision of our LDA and logistic regression models are the same!  This illustrates how logistic regression and LDA can produce surprisingly similar results!  
+
+## Quadratic Discriminant Analysis
+
+Lastly, let's predict with a QDA model to see if we can improve our performance. Go ahead and fit a QDA model with `Direction ~ Lag1 + Lag2` and check out the model summary.
+
+```{r prepare-data-15, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+```{r market-qda-fit, exercise=TRUE, exercise.setup = "prepare-data-15", warning=FALSE}
+# fit model
+
+# check out the model summary
+
+```
+
+```{r market-qda-fit-hint-1}
+# fit model
+qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train)
+```
+
+```{r market-qda-fit-hint-2}
+# check out the model summary
+qda.fit
+```
+
+The model summary won't differ much from the LDA model.  To see if the QDA model does a better job predicting, go ahead and predict with our QDA model and assess the confusion matrix to see if the prediction rates differ from those produced by logistic regression and LDA.
+
+```{r market-qda-pred, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-15", warning=FALSE}
+qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train)
+
+# compute predictions
+
+# create confusion matrix
+
+# calculate overall error rate
+
+# calculate precision
+```
+
+
+```{r market-qda-pred-hint-1}
+# compute predictions
+test.predicted.qda <- predict(qda.fit, newdata = test)
+```
+
+```{r market-qda-pred-hint-2}
+# create confusion matrix
+table(test$Direction, test.predicted.qda$class)
+```
+
+```{r market-qda-pred-hint-3}
+# calculate overall error rate
+mean(test.predicted.qda$class != test$Direction)
+```
+
+```{r market-qda-pred-hint-4}
+# calculate precision
+121 / (20 + 121)
+```
+
+Surprisingly, the QDA predictions are accurate almost 60% of the time (overall error rate is 40%)! Furthermore, the precision of the model is 86%. This level of accuracy is quite impressive for stock market data, which is known to be quite hard to model accurately. This suggests that the quadratic form assumed by QDA may capture the true relationship more accurately than the linear forms assumed by LDA and logistic regression.
+
+Let's compare the ROC curves for our different models. Although you can’t tell, the logistic regression and LDA ROC curves sit directly on top of one another. However, we can see how the QDA (green) differs slightly.
+
+```{r}
+# models
+glm.fit <- glm(Direction ~ Lag1 + Lag2, data = train, family = binomial)
+lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train)
+qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train)
+
+# predictions
+glm.probs <- predict(glm.fit, test, type = "response")
+test.predicted.lda <- predict(lda.fit, newdata = test)
+test.predicted.qda <- predict(qda.fit, newdata = test)
+
+# create ROC curves
+library(ROCR)
+
+p1 <- prediction(glm.probs, test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+p2 <- prediction(test.predicted.lda$posterior[,2], test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+p3 <- prediction(test.predicted.qda$posterior[,2], test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+plot(p1, col = "red")
+plot(p2, add = TRUE, col = "blue")
+plot(p3, add = TRUE, col = "green")
+```
+
+The difference is subtle. You can see where we experience increases in the true positive predictions (where the green line goes above the red and blue lines). And although our precision increases, overall AUC does not appear to be that much higher.  Do you remember how to compute the AUC?  Give it a try.
+
+
+```{r prepare-data-16, echo=FALSE}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+
+# models
+glm.fit <- glm(Direction ~ Lag1 + Lag2, data = train, family = binomial)
+lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train)
+qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train)
+```
+
+```{r market-auc, exercise=TRUE, exercise.eval=TRUE, exercise.setup = "prepare-data-16", warning=FALSE}
+# predictions
+glm.probs <- predict(glm.fit, test, type = "response")
+test.predicted.lda <- predict(lda.fit, newdata = test)
+test.predicted.qda <- predict(qda.fit, newdata = test)
+
+# compute AUC
+library(ROCR)
+
+# Logistic regression AUC
+
+# LDA AUC
+
+# QDA AUC
+
+```
+
+```{r market-auc-hint-1}
+# Logistic regression AUC
+prediction(glm.probs, test$Direction) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+```
+
+
+```{r market-auc-hint-2}
+# LDA AUC
+prediction(test.predicted.lda$posterior[,2], test$Direction) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+```
+
+```{r market-auc-hint-3}
+# QDA AUC
+prediction(test.predicted.qda$posterior[,2], test$Direction) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+```
+
+So although our QDA model improves the overall error and precision rates, the AUC is not substantially higher.  Thus, we probably want to continue tuning our models or assess other techniques to improve our classification performance before hedging any bets! But this illustrates the usefulness of assessing multiple classification models.

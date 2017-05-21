@@ -31,6 +31,7 @@ get_tutorial <- function(tutorial) {
   if(tutorial == "Linear Regression") tutorial <- "LinearRegression"
   if(tutorial == "Supervised Classification") tutorial <- "SupervisedClassification"
   if(tutorial == "Model Selection") tutorial <- "ModelSelection"
+  if(tutorial == "Market Prediction") tutorial <- "MarketPrediction"
 
   learnr::run_tutorial(tutorial, package = "learningAnalytics")
 }
