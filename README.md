@@ -16,7 +16,7 @@ You can install `learningAnalytics` straight from GitHub with:
       install.packages("devtools")
     }
 
-    devtools::install_github("bradleyboehmke/leaningAnalytics")
+    devtools::install_github("bradleyboehmke/learningAnalytics")
 
 Start Learning
 --------------
