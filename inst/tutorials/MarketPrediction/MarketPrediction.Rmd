@@ -1,7 +1,7 @@
 ---
 title: "Case Study 4: Predicting Stock Market Movements"
 output: 
-  rtutor::tutorial:
+  learnr::tutorial:
     progressive: true
 runtime: shiny_prerendered
 ---
@@ -16,7 +16,7 @@ runtime: shiny_prerendered
 library(tidyverse)  # data manipulation and visualization
 library(modelr)     # provides easy pipeline modeling functions
 library(broom)      # helps to tidy up model outputs
-library(rtutor)
+library(learnr)
 library(caret)
 library(MASS)
 ```
